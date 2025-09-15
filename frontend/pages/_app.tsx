@@ -26,9 +26,14 @@ export default function MyApp({ Component, pageProps }: AppProps) {
               </Link>
             </>
           )}
-        </div>
-        <div className="nav-title">
-          {questionSet?.title || "No question set loaded"}
+          {questionSet && (
+            <span
+              className="nav-current-set"
+              title={questionSet.title}
+            >
+              {`- ${questionSet.title}`}
+            </span>
+          )}
         </div>
         <div className="nav-links">
           <Link href="/account/billing">Account &amp; Billing</Link>
@@ -91,11 +96,14 @@ export default function MyApp({ Component, pageProps }: AppProps) {
           flex-direction: column;
           overflow-y: auto;
         }
-        .nav-title {
-          font-size: 1rem;
-          font-weight: 500;
-          flex: 1;
-          text-align: center;
+        .nav-current-set {
+          margin-left: 0.75rem;
+          max-width: 300px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          color: #555;
+          font-size: 0.9rem;
         }
       `}</style>
     </div>

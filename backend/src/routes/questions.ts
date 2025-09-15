@@ -246,10 +246,13 @@ router.post("/", express.json(), async (req, res) => {
 
     sendEvent("loadQuestionSet", { questionSetId: id });
 
-    const user = await getUser();
-    const keySet = user.keySets[0];
-    const key = keySet.keys[0];
-    await deductCredits(overallCost, "question_generation", user.id, keySet.id, key.id);
+    const { userId, keySetId, keyId } = res.locals as {
+      userId: string;
+      keySetId: string;
+      keyId: string;
+    };
+    const user = await getUser(userId);
+    await deductCredits(overallCost, "question_generation", user.id, keySetId, keyId);
 
     sendLog(`DONE.`);
 
