@@ -11,8 +11,8 @@ const app = express();
 app.use(cors());
 
 // serve static folders (optional)
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-app.use("/data", express.static(path.join(__dirname, "../data")));
+app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
+app.use("/data", express.static(path.join(__dirname, "../../data")));
 
 // main API router
 app.use("/api/questions", questionsRouter);
