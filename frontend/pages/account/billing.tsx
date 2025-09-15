@@ -5,7 +5,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 type UsageEntry = {
   timestamp: string;
   action: string;
-  cost: number;
+  tokenCost: number;
+  billedCost: number;
+  requests: number;
 };
 
 type ApiKey = {
@@ -128,7 +130,8 @@ export default function BillingPage() {
             <p>{set.description}</p>
             <ul>
               {set.keys.map((k, idx) => {
-                const total = k.usage.reduce((a, b) => a + b.cost, 0);
+                const total = k.usage.reduce((a, b) => a + b.billedCost, 0);
+                const reqs = k.usage.reduce((a, b) => a + b.requests, 0);
                 return (
                   <li key={k.id}>
                     <div className="key-info">
@@ -140,7 +143,7 @@ export default function BillingPage() {
                     <div className="key-actions">
                       <button onClick={() => rotate(set.id, idx)}>Rotate</button>
                       <span className="usage">
-                        {k.usage.length} reqs / {total.toFixed(2)}
+                        {reqs} reqs / {total.toFixed(2)}
                       </span>
                     </div>
                   </li>
@@ -173,7 +176,7 @@ export default function BillingPage() {
         <ul>
           {data.usage.map((u, idx) => (
             <li key={idx}>
-              {u.timestamp}: {u.action} - {u.cost}
+              {u.timestamp}: {u.action} - {u.billedCost}
             </li>
           ))}
         </ul>

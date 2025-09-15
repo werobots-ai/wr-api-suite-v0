@@ -5,7 +5,12 @@ import { v4 as uuid } from "uuid";
 export interface UsageEntry {
   timestamp: string;
   action: string;
-  cost: number;
+  /** Cost incurred towards OpenAI in dollars */
+  tokenCost: number;
+  /** Amount billed to the client in dollars */
+  billedCost: number;
+  /** Number of OpenAI requests contributing to the cost */
+  requests: number;
 }
 
 export interface ApiKey {
@@ -112,7 +117,9 @@ export async function topUp(
   const entry: UsageEntry = {
     timestamp: new Date().toISOString(),
     action: "topup",
-    cost: -amount,
+    tokenCost: 0,
+    billedCost: -amount,
+    requests: 0,
   };
   user.usage.push(entry);
   users[userId] = user;
@@ -120,20 +127,24 @@ export async function topUp(
   return user;
 }
 
-export async function deductCredits(
-  cost: number,
+export async function recordUsage(
+  tokenCost: number,
+  billedCost: number,
   action: string,
   userId: string = DEFAULT_USER_ID,
+  requests: number = 0,
   keySetId?: string,
   keyId?: string,
 ): Promise<UserData> {
   const users = await loadUsers();
   const user = await getUser(userId);
-  user.credits -= cost;
+  user.credits -= billedCost;
   const entry: UsageEntry = {
     timestamp: new Date().toISOString(),
     action,
-    cost,
+    tokenCost,
+    billedCost,
+    requests,
   };
   user.usage.push(entry);
 

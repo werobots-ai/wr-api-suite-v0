@@ -5,7 +5,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 type UsageEntry = {
   timestamp: string;
   action: string;
-  cost: number;
+  tokenCost: number;
+  billedCost: number;
+  requests: number;
 };
 
 type ApiKey = {
@@ -61,6 +63,18 @@ export default function AdminUsers() {
           <h2>
             {u.name} - {u.credits.toFixed(2)} credits
           </h2>
+          {(() => {
+            const totalRequests = u.usage.reduce((a, b) => a + b.requests, 0);
+            const totalBilled = u.usage.reduce((a, b) => a + b.billedCost, 0);
+            const totalCost = u.usage.reduce((a, b) => a + b.tokenCost, 0);
+            return (
+              <p className="summary">
+                {totalRequests} reqs / billed {totalBilled.toFixed(2)} / cost
+                {" "}
+                {totalCost.toFixed(2)} / profit {(totalBilled - totalCost).toFixed(2)}
+              </p>
+            );
+          })()}
           <div className="keysets">
             {u.keySets.map((ks) => (
               <div key={ks.id} className="keyset">
@@ -75,9 +89,29 @@ export default function AdminUsers() {
                           rotated {new Date(k.lastRotated).toLocaleString()}
                         </span>
                       </div>
-                      <button onClick={() => rotate(u.id, ks.id, idx)}>
-                        Rotate
-                      </button>
+                      <div className="key-actions">
+                        <button onClick={() => rotate(u.id, ks.id, idx)}>
+                          Rotate
+                        </button>
+                        {(() => {
+                          const reqs = k.usage.reduce((a, b) => a + b.requests, 0);
+                          const billed = k.usage.reduce(
+                            (a, b) => a + b.billedCost,
+                            0,
+                          );
+                          const cost = k.usage.reduce(
+                            (a, b) => a + b.tokenCost,
+                            0,
+                          );
+                          return (
+                            <span className="usage">
+                              {reqs} reqs / billed {billed.toFixed(2)} / cost
+                              {" "}
+                              {cost.toFixed(2)} / profit {(billed - cost).toFixed(2)}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -89,7 +123,7 @@ export default function AdminUsers() {
             <ul>
               {u.usage.map((e, i) => (
                 <li key={i}>
-                  {e.timestamp}: {e.action} - {e.cost}
+                  {e.timestamp}: {e.action} - billed {e.billedCost} (cost {e.tokenCost})
                 </li>
               ))}
             </ul>
@@ -129,6 +163,19 @@ export default function AdminUsers() {
           justify-content: space-between;
           align-items: center;
           padding: 0.25rem 0;
+        }
+        .key-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 0.25rem;
+        }
+        .usage {
+          font-size: 0.8rem;
+        }
+        .summary {
+          font-size: 0.9rem;
+          color: #333;
         }
         button {
           padding: 0.25rem 0.5rem;
