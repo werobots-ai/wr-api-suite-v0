@@ -36,7 +36,7 @@ Given the ${SNIPPET_WORD} and ${
         questions.length > 1 ? "s" : ""
       }, produce one very long, natural-language reasoning that:
 - Iteratively lists pros and cons
-- Calls out supporting and contradicting facts, quoting statements from both the client and the customer service representative (always include row numbers for each quote)
+- Calls out supporting and contradicting facts, quoting statements from the source text (always include row numbers for each quote)
 - Performs at least 3 rounds of proposing an answer and then trying to disprove it
 - Collects verbatim references from the ${SNIPPET_WORD}, quoting each in double quotes, and includes many such quotes throughout the reasoning
 - Always include row numbers for each verbatim reference, e.g. "Some word by word text copied from the source" (Row 14).

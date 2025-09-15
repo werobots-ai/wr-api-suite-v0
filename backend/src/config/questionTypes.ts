@@ -7,17 +7,10 @@ import { openEndedQuestionFinalizer } from "../llmCalls/openEndedQuestionFinaliz
 import { scaleAnswerGenerator } from "../llmCalls/scaleAnswerGenerator";
 import { scaleFinalizer } from "../llmCalls/scaleFinalizer";
 
-// export const SNIPPET_SHORT_DESCRIPTION =
-//   "conversation between a customer and a customer service representative";
-
-// export const SNIPPET_TITLE = "Customer Service Conversation";
-
-// export const SNIPPET_WORD_TITLE_CASE = "Conversation";
-
-export const SNIPPET_SHORT_DESCRIPTION =
-  "application to an aviation related job";
-export const SNIPPET_TITLE = "Aviation Job Application";
-export const SNIPPET_WORD_TITLE_CASE = "Application";
+// Descriptive labels for the text being evaluated
+export const SNIPPET_SHORT_DESCRIPTION = "unstructured text snippet";
+export const SNIPPET_TITLE = "Text Snippet";
+export const SNIPPET_WORD_TITLE_CASE = "Snippet";
 
 export const SNIPPET_WORD = SNIPPET_WORD_TITLE_CASE.toLowerCase();
 
