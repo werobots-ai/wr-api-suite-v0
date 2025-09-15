@@ -16,7 +16,7 @@ import { questionExecutionPlanner } from "../llmCalls/questionExecutionPlanner";
 import { v4 as uuid } from "uuid";
 import { marked } from "marked";
 import { QAResult } from "../types/Questions";
-import { deductCredits } from "../utils/userStore";
+import { deductCredits, getUser } from "../utils/userStore";
 
 const router = Router();
 
@@ -246,7 +246,10 @@ router.post("/", express.json(), async (req, res) => {
 
     sendEvent("loadQuestionSet", { questionSetId: id });
 
-    await deductCredits(overallCost, "question_generation");
+    const user = await getUser();
+    const keySet = user.keySets[0];
+    const key = keySet.keys[0];
+    await deductCredits(overallCost, "question_generation", user.id, keySet.id, key.id);
 
     sendLog(`DONE.`);
 

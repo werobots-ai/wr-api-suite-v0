@@ -8,79 +8,200 @@ export interface UsageEntry {
   cost: number;
 }
 
+export interface ApiKey {
+  id: string;
+  key: string;
+  lastRotated: string;
+  usage: UsageEntry[];
+}
+
+export interface KeySet {
+  id: string;
+  name: string;
+  description: string;
+  keys: ApiKey[]; // always two keys
+}
+
 export interface UserData {
+  id: string;
+  name: string;
   credits: number;
   usage: UsageEntry[];
-  apiKeys: { id: string; key: string }[];
+  keySets: KeySet[];
 }
 
-const USER_FILE = path.join(__dirname, "../../../data/user.json");
+const USERS_FILE = path.join(__dirname, "../../../data/users.json");
+const DEFAULT_USER_ID = "default";
 
-async function saveUser(user: UserData): Promise<void> {
-  await fs.mkdir(path.dirname(USER_FILE), { recursive: true });
-  await fs.writeFile(USER_FILE, JSON.stringify(user, null, 2), "utf-8");
+async function saveUsers(users: Record<string, UserData>): Promise<void> {
+  await fs.mkdir(path.dirname(USERS_FILE), { recursive: true });
+  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2), "utf-8");
 }
 
-export async function loadUser(): Promise<UserData> {
+async function loadUsers(): Promise<Record<string, UserData>> {
   try {
-    const raw = await fs.readFile(USER_FILE, "utf-8");
-    const data = JSON.parse(raw) as UserData;
-    if (!data.apiKeys || data.apiKeys.length < 2) {
-      data.apiKeys = data.apiKeys || [];
-      while (data.apiKeys.length < 2) {
-        data.apiKeys.push({ id: uuid(), key: uuid() });
-      }
-      await saveUser(data);
-    }
-    return data;
+    const raw = await fs.readFile(USERS_FILE, "utf-8");
+    return JSON.parse(raw);
   } catch {
-    const data: UserData = {
+    const now = new Date().toISOString();
+    const defaultUser: UserData = {
+      id: DEFAULT_USER_ID,
+      name: "Default User",
       credits: 0,
       usage: [],
-      apiKeys: [
-        { id: uuid(), key: uuid() },
-        { id: uuid(), key: uuid() },
+      keySets: [
+        {
+          id: uuid(),
+          name: "Default",
+          description: "",
+          keys: [
+            { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+            { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+          ],
+        },
       ],
     };
-    await saveUser(data);
-    return data;
+    const users = { [DEFAULT_USER_ID]: defaultUser };
+    await saveUsers(users);
+    return users;
   }
 }
 
-export async function topUp(amount: number): Promise<UserData> {
-  const user = await loadUser();
+export async function getUsers(): Promise<UserData[]> {
+  const users = await loadUsers();
+  return Object.values(users);
+}
+
+export async function getUser(
+  userId: string = DEFAULT_USER_ID,
+): Promise<UserData> {
+  const users = await loadUsers();
+  let user = users[userId];
+  if (!user) {
+    const now = new Date().toISOString();
+    user = {
+      id: userId,
+      name: userId,
+      credits: 0,
+      usage: [],
+      keySets: [
+        {
+          id: uuid(),
+          name: "Default",
+          description: "",
+          keys: [
+            { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+            { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+          ],
+        },
+      ],
+    };
+    users[userId] = user;
+    await saveUsers(users);
+  }
+  return user;
+}
+
+export async function topUp(
+  amount: number,
+  userId: string = DEFAULT_USER_ID,
+): Promise<UserData> {
+  const users = await loadUsers();
+  const user = await getUser(userId);
   user.credits += amount;
-  user.usage.push({
+  const entry: UsageEntry = {
     timestamp: new Date().toISOString(),
     action: "topup",
     cost: -amount,
-  });
-  await saveUser(user);
+  };
+  user.usage.push(entry);
+  users[userId] = user;
+  await saveUsers(users);
   return user;
 }
 
-export async function deductCredits(cost: number, action: string): Promise<UserData> {
-  const user = await loadUser();
+export async function deductCredits(
+  cost: number,
+  action: string,
+  userId: string = DEFAULT_USER_ID,
+  keySetId?: string,
+  keyId?: string,
+): Promise<UserData> {
+  const users = await loadUsers();
+  const user = await getUser(userId);
   user.credits -= cost;
-  user.usage.push({
+  const entry: UsageEntry = {
     timestamp: new Date().toISOString(),
     action,
     cost,
-  });
-  await saveUser(user);
+  };
+  user.usage.push(entry);
+
+  if (keySetId && keyId) {
+    const ks = user.keySets.find((k) => k.id === keySetId);
+    const key = ks?.keys.find((k) => k.id === keyId);
+    if (key) {
+      key.usage.push(entry);
+    }
+  }
+
+  users[userId] = user;
+  await saveUsers(users);
   return user;
 }
 
-export async function rotateApiKey(index: number): Promise<string> {
-  const user = await loadUser();
-  if (index < 0 || index > 1) {
-    throw new Error("Invalid key index");
-  }
-  user.apiKeys[index] = { id: uuid(), key: uuid() };
-  await saveUser(user);
-  return user.apiKeys[index].key;
+export async function addKeySet(
+  name: string,
+  description: string,
+  userId: string = DEFAULT_USER_ID,
+): Promise<KeySet> {
+  const users = await loadUsers();
+  const user = await getUser(userId);
+  const now = new Date().toISOString();
+  const keySet: KeySet = {
+    id: uuid(),
+    name,
+    description,
+    keys: [
+      { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+      { id: uuid(), key: uuid(), lastRotated: now, usage: [] },
+    ],
+  };
+  user.keySets.push(keySet);
+  users[userId] = user;
+  await saveUsers(users);
+  return keySet;
 }
 
-export async function getUser(): Promise<UserData> {
-  return loadUser();
+export async function removeKeySet(
+  setId: string,
+  userId: string = DEFAULT_USER_ID,
+): Promise<void> {
+  const users = await loadUsers();
+  const user = await getUser(userId);
+  user.keySets = user.keySets.filter((ks) => ks.id !== setId);
+  users[userId] = user;
+  await saveUsers(users);
 }
+
+export async function rotateApiKey(
+  setId: string,
+  index: number,
+  userId: string = DEFAULT_USER_ID,
+): Promise<string> {
+  const users = await loadUsers();
+  const user = await getUser(userId);
+  const keySet = user.keySets.find((ks) => ks.id === setId);
+  if (!keySet) throw new Error("Key set not found");
+  if (index < 0 || index > 1) throw new Error("Invalid key index");
+  const newKey = { id: uuid(), key: uuid(), lastRotated: new Date().toISOString(), usage: [] };
+  keySet.keys[index] = newKey;
+  users[userId] = user;
+  await saveUsers(users);
+  return newKey.key;
+}
+
+export async function maskKey(key: string): Promise<string> {
+  return key.replace(/.(?=.{4})/g, "*");
+}
+

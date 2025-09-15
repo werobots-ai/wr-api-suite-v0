@@ -32,6 +32,8 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         </div>
         <div className="nav-links">
           <Link href="/account/billing">Account &amp; Billing</Link>
+          {" "}|{" "}
+          <Link href="/admin/users">Admin</Link>
         </div>
       </nav>
       <main className="app-content">

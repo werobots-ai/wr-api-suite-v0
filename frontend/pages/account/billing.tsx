@@ -8,10 +8,24 @@ type UsageEntry = {
   cost: number;
 };
 
+type ApiKey = {
+  id: string;
+  key: string;
+  lastRotated: string;
+  usage: UsageEntry[];
+};
+
+type KeySet = {
+  id: string;
+  name: string;
+  description: string;
+  keys: ApiKey[];
+};
+
 type UserData = {
   credits: number;
   usage: UsageEntry[];
-  apiKeys: { id: string; key: string }[];
+  keySets: KeySet[];
 };
 
 type Pricing = {
@@ -25,6 +39,7 @@ export default function BillingPage() {
   const [data, setData] = useState<UserData | null>(null);
   const [amount, setAmount] = useState<number>(0);
   const [pricing, setPricing] = useState<Pricing | null>(null);
+  const [newSet, setNewSet] = useState({ name: "", description: "" });
 
   const load = async () => {
     const res = await fetch(`${API_URL}/api/account`);
@@ -49,12 +64,25 @@ export default function BillingPage() {
     load();
   };
 
-  const rotate = async (index: number) => {
-    await fetch(`${API_URL}/api/account/keys/rotate`, {
+  const rotate = async (setId: string, index: number) => {
+    await fetch(`${API_URL}/api/account/keysets/${setId}/keys/${index}/rotate`, {
+      method: "POST",
+    });
+    load();
+  };
+
+  const addKeySet = async () => {
+    await fetch(`${API_URL}/api/account/keysets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ index }),
+      body: JSON.stringify(newSet),
     });
+    setNewSet({ name: "", description: "" });
+    load();
+  };
+
+  const removeSet = async (id: string) => {
+    await fetch(`${API_URL}/api/account/keysets/${id}`, { method: "DELETE" });
     load();
   };
 
@@ -90,15 +118,54 @@ export default function BillingPage() {
       </div>
 
       <div className="card">
-        <h2>API Keys</h2>
-        <ul>
-          {data.apiKeys.map((k, idx) => (
-            <li key={k.id}>
-              <code>{mask(k.key)}</code>
-              <button onClick={() => rotate(idx)}>Rotate</button>
-            </li>
-          ))}
-        </ul>
+        <h2>API Key Sets</h2>
+        {data.keySets.map((set) => (
+          <div key={set.id} className="keyset">
+            <div className="keyset-header">
+              <h3>{set.name}</h3>
+              <button onClick={() => removeSet(set.id)}>Remove</button>
+            </div>
+            <p>{set.description}</p>
+            <ul>
+              {set.keys.map((k, idx) => {
+                const total = k.usage.reduce((a, b) => a + b.cost, 0);
+                return (
+                  <li key={k.id}>
+                    <div className="key-info">
+                      <code>{mask(k.key)}</code>
+                      <span className="rotated">
+                        rotated {new Date(k.lastRotated).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="key-actions">
+                      <button onClick={() => rotate(set.id, idx)}>Rotate</button>
+                      <span className="usage">
+                        {k.usage.length} reqs / {total.toFixed(2)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+        <div className="add-set">
+          <input
+            type="text"
+            placeholder="Name"
+            value={newSet.name}
+            onChange={(e) => setNewSet({ ...newSet, name: e.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Description"
+            value={newSet.description}
+            onChange={(e) =>
+              setNewSet({ ...newSet, description: e.target.value })
+            }
+          />
+          <button onClick={addKeySet}>Add Key Set</button>
+        </div>
       </div>
 
       <div className="card">
@@ -126,6 +193,38 @@ export default function BillingPage() {
           padding: 1rem;
           border-radius: 4px;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .keyset {
+          border-top: 1px solid #eee;
+          padding-top: 0.5rem;
+          margin-top: 0.5rem;
+        }
+        .keyset-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .key-info {
+          display: flex;
+          flex-direction: column;
+        }
+        .key-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .rotated {
+          font-size: 0.8rem;
+          color: #666;
+        }
+        .usage {
+          font-size: 0.8rem;
+          color: #333;
+        }
+        .add-set {
+          display: flex;
+          gap: 0.5rem;
+          margin-top: 1rem;
         }
         .topup {
           display: flex;
