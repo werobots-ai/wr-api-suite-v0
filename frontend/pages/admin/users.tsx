@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
+import UsageBreakdown, { UsageEntry } from "@/components/UsageBreakdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-type UsageEntry = {
-  timestamp: string;
-  action: string;
-  tokenCost: number;
-  billedCost: number;
-  requests: number;
-};
 
 type ApiKey = {
   id: string;
@@ -120,13 +113,7 @@ export default function AdminUsers() {
           </div>
           <div className="usage">
             <h3>Usage</h3>
-            <ul>
-              {u.usage.map((e, i) => (
-                <li key={i}>
-                  {e.timestamp}: {e.action} - billed {e.billedCost} (cost {e.tokenCost})
-                </li>
-              ))}
-            </ul>
+            <UsageBreakdown entries={u.usage} />
           </div>
         </div>
       ))}

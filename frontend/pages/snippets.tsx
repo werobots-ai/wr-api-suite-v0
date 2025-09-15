@@ -27,6 +27,7 @@ export default function SnippetsPage(props: {
     reasoning?: string;
     detailedReasoning?: string;
   } | null>(null);
+  const [processingMsg, setProcessingMsg] = useState<string | null>(null);
 
   const initialHasDropped = snippets && Object.keys(snippets).length > 0;
   const [hasDropped, setHasDropped] = useState(initialHasDropped);
@@ -146,6 +147,11 @@ export default function SnippetsPage(props: {
     }
     if (event === "error") {
       setLogs((prev) => [...prev, `Error: ${data.message}`]);
+      return;
+    }
+    if (event === "snippetCount") {
+      const count = data.count ?? 0;
+      setProcessingMsg(`Received ${count} snippets. Processing...`);
       return;
     }
     if (!data.snippetId) {
@@ -385,6 +391,19 @@ export default function SnippetsPage(props: {
 
   return (
     <>
+      {processingMsg && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <button
+              className="modal-close-button"
+              onClick={() => setProcessingMsg(null)}
+            >
+              ×
+            </button>
+            <p>{processingMsg}</p>
+          </div>
+        </div>
+      )}
       <main className="container" onDragOver={handleContainerDragOver}>
         <input
           ref={fileInputRef}

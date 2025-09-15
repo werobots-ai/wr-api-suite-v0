@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
+import UsageBreakdown, { UsageEntry } from "@/components/UsageBreakdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-type UsageEntry = {
-  timestamp: string;
-  action: string;
-  tokenCost: number;
-  billedCost: number;
-  requests: number;
-};
 
 type ApiKey = {
   id: string;
@@ -173,13 +166,7 @@ export default function BillingPage() {
 
       <div className="card">
         <h2>Usage</h2>
-        <ul>
-          {data.usage.map((u, idx) => (
-            <li key={idx}>
-              {u.timestamp}: {u.action} - {u.billedCost}
-            </li>
-          ))}
-        </ul>
+        <UsageBreakdown entries={data.usage} />
       </div>
 
       <style jsx>{`
