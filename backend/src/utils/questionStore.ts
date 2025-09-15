@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { QAResult, QuestionSet } from "../types/Questions";
 
-const Q_DIR = path.join(__dirname, "../../../data/questions");
+const Q_DIR = path.join(__dirname, "../../data/questions");
 const FILE_PREFIX = "questions-";
 
 export async function loadQuestionSet(id: string): Promise<QuestionSet> {
@@ -119,7 +119,7 @@ export const loadQaResult = async (
 ): Promise<QAResult | null> => {
   const filePath = path.join(
     __dirname,
-    "../../../data/qaResults",
+    "../../data/qaResults",
     `${questionSetId.replace(/-/g, "%2D")}-${snippetId.replace(
       /-/g,
       "%2D"
@@ -136,14 +136,14 @@ export const loadQaResult = async (
 export const saveQaResult = async (qaResult: QAResult): Promise<void> => {
   const filePath = path.join(
     __dirname,
-    "../../../data/qaResults",
+    "../../data/qaResults",
     `${encodeURIComponent(qaResult.questionSetId).replace(
       /-/g,
       "%2D"
     )}-${encodeURIComponent(qaResult.snippetId).replace(/-/g, "%2D")}.json`
   );
   try {
-    await fs.mkdir(path.join(__dirname, "../../../data/qaResults"), {
+    await fs.mkdir(path.join(__dirname, "../../data/qaResults"), {
       recursive: true,
     });
     await fs.writeFile(filePath, JSON.stringify(qaResult, null, 2), "utf-8");
@@ -159,7 +159,7 @@ export const listQaResults = async (
 ): Promise<QAResult[]> => {
   console.log("Listing QA results with params:", params);
 
-  const dirPath = path.join(__dirname, "../../../data/qaResults");
+  const dirPath = path.join(__dirname, "../../data/qaResults");
   const { questionSetId, snippetId } = params;
   try {
     const files = await fs.readdir(dirPath);
@@ -208,7 +208,7 @@ export async function softDeleteQuestionSet(id: string): Promise<void> {
   await fs.rename(oldPath, newPath);
 
   // Rename related QA result files
-  const qaDir = path.join(__dirname, "../../../data/qaResults");
+  const qaDir = path.join(__dirname, "../../data/qaResults");
   let qaFiles: string[];
   try {
     qaFiles = await fs.readdir(qaDir);
