@@ -9,7 +9,6 @@ import {
   QAResult,
 } from "@/types/Questions";
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import Link from "next/link";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -123,7 +122,10 @@ const QuestionSetPage: React.FC<
   const openModal = () => setShowModal(true);
   const closeModal = () => setShowModal(false);
   const openLoadModal = async () => {
-    const res = await fetch(`${API_URL}/api/questions`);
+    const apiKey = getApiKey();
+    const res = await fetch(`${API_URL}/api/questions`, {
+      headers: apiKey ? { "x-api-key": apiKey } : undefined,
+    });
     const data: {
       id: string;
       title: string;
@@ -142,13 +144,20 @@ const QuestionSetPage: React.FC<
         "Are you sure you want to delete this question set? This action cannot be undone."
       )
     ) {
-      await fetch(`${API_URL}/api/questions/${id}`, { method: "DELETE" });
+      const apiKey = getApiKey();
+      await fetch(`${API_URL}/api/questions/${id}`, {
+        method: "DELETE",
+        headers: apiKey ? { "x-api-key": apiKey } : undefined,
+      });
       setAvailableSets((prev) => prev.filter((s) => s.id !== id));
     }
   };
 
   const loadQuestionSet = async (id: string) => {
-    const res = await fetch(`${API_URL}/api/questions/${id}`);
+    const apiKey = getApiKey();
+    const res = await fetch(`${API_URL}/api/questions/${id}`, {
+      headers: apiKey ? { "x-api-key": apiKey } : undefined,
+    });
     const set: QuestionSet = await res.json();
 
     setQuestionSet(set);
@@ -170,9 +179,13 @@ const QuestionSetPage: React.FC<
     setLogs([]);
     setStreamComplete(false);
 
+    const apiKey = getApiKey();
     const res = await fetch(`${API_URL}/api/questions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
+      },
       body: JSON.stringify({ changeRequest: userInput }),
     });
     if (!res.body) return;
@@ -271,11 +284,11 @@ const QuestionSetPage: React.FC<
     }
   }, [selectedQuestion]);
 
+  const getApiKey = () =>
+    typeof window !== "undefined" ? localStorage.getItem("apiKey") : null;
+
   return (
     <main className="container">
-      <div style={{ textAlign: "right" }}>
-        <Link href="/account/billing">Account &amp; Billing</Link>
-      </div>
       {showModal && (
         <div className="modal">
           {!isGenerating && !streamComplete && (
@@ -1256,9 +1269,9 @@ const QuestionSetPage: React.FC<
       <div className="bottom-content">
         <div className="panel desc-panel" tabIndex={0}>
           <div className="field">
-            <label htmlFor="conversation-desc">Conversation Description</label>
+            <label htmlFor="snippet-desc">Snippet Description</label>
             <DynamicWidthTextarea
-              id="conversation-desc"
+              id="snippet-desc"
               readOnly={!editingDesc}
               value={snippetType}
               growVertically={true}
@@ -1276,8 +1289,8 @@ const QuestionSetPage: React.FC<
               onClick={() => setEditingDesc((v) => !v)}
               aria-label={
                 editingDesc
-                  ? "Save conversation description"
-                  : "Edit conversation description"
+                  ? "Save snippet description"
+                  : "Edit snippet description"
               }
             >
               {editingDesc ? "💾" : "✏️"}

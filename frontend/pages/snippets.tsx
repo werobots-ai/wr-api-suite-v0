@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
-export default function ConversationsPage(props: {
+export default function SnippetsPage(props: {
   questionSet: QuestionSet | null;
   snippets: Record<string, QAResult>;
   setSnippets: React.Dispatch<React.SetStateAction<Record<string, QAResult>>>;
@@ -38,6 +38,8 @@ export default function ConversationsPage(props: {
   }, [props.questionSet]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const getApiKey = () =>
+    typeof window !== "undefined" ? localStorage.getItem("apiKey") : null;
 
   const handleBrowse = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -60,9 +62,14 @@ export default function ConversationsPage(props: {
       e.target.value = "";
       return;
     }
+    const apiKey = getApiKey();
+    const headers: Record<string, string> = props.questionSet
+      ? { questionSetId: props.questionSet.id }
+      : {};
+    if (apiKey) headers["x-api-key"] = apiKey;
     const res = await fetch(`${API_URL}/api/upload`, {
       method: "POST",
-      headers: props.questionSet ? { questionSetId: props.questionSet.id } : {},
+      headers,
       body: form,
     });
     if (!res.body) return;
@@ -175,6 +182,7 @@ export default function ConversationsPage(props: {
 
       switch (event) {
         case "conversation":
+        case "snippet":
           // ensure answers object exists
           break;
         case "linkFileToSnippet":
@@ -309,9 +317,14 @@ export default function ConversationsPage(props: {
     }
 
     // Include questionSetId header if provided
+    const apiKey = getApiKey();
+    const headers: Record<string, string> = props.questionSet
+      ? { questionSetId: props.questionSet.id }
+      : {};
+    if (apiKey) headers["x-api-key"] = apiKey;
     const res = await fetch(`${API_URL}/api/upload`, {
       method: "POST",
-      headers: props.questionSet ? { questionSetId: props.questionSet.id } : {},
+      headers,
       body: form,
     });
     if (!res.body) return;
@@ -405,7 +418,7 @@ export default function ConversationsPage(props: {
           {(() => {
             const convEntries = Object.entries(snippets);
             if (convEntries.length === 0) {
-              return <p>No conversations yet.</p>;
+              return <p>No snippets yet.</p>;
             }
             const questions = props.questionSet!.questions as Question[];
 

@@ -2,7 +2,7 @@
 
 **Work in Progress**
 
-This monorepo contains the first API in the WR API Suite. It generates an augmented question set with rich metadata from any textual input and then uses that set to evaluate large volumes of documents. The same pipeline can power many workflows: scoring CVs for a role, auditing customer service conversations, or running continuous quality checks on arbitrary log batches. Results are produced with full reasoning, metadata, and auditability.
+This monorepo contains the first API in the WR API Suite. It generates an augmented question set with rich metadata from any textual input and then uses that set to evaluate large volumes of documents. The same pipeline can power many workflows: scoring CVs for a role, auditing customer service snippets, or running continuous quality checks on arbitrary log batches. Results are produced with full reasoning, metadata, and auditability.
 
 Batch jobs run in the background when triggered by the consumer. A status endpoint lets clients poll progress, and generated results remain available for a short time-to-live window for download (and can be deleted early by the user).
 

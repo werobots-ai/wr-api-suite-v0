@@ -3,7 +3,12 @@ export async function fetchJSON<T>(
   url: string,
   opts?: RequestInit
 ): Promise<T> {
-  const res = await fetch(url, opts);
+  const headers = new Headers(opts?.headers || {});
+  if (typeof window !== "undefined") {
+    const apiKey = localStorage.getItem("apiKey");
+    if (apiKey) headers.set("x-api-key", apiKey);
+  }
+  const res = await fetch(url, { ...opts, headers });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

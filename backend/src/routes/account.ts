@@ -1,5 +1,11 @@
 import express, { Router } from "express";
-import { getUser, topUp, rotateApiKey } from "../utils/userStore";
+import {
+  getUser,
+  topUp,
+  rotateApiKey,
+  addKeySet,
+  removeKeySet,
+} from "../utils/userStore";
 
 const router = Router();
 
@@ -19,14 +25,33 @@ router.post("/topup", express.json(), async (req, res) => {
   res.json({ credits: user.credits });
 });
 
-router.post("/keys/rotate", express.json(), async (req, res) => {
-  const { index } = req.body;
-  try {
-    const key = await rotateApiKey(Number(index));
-    res.json({ apiKey: key });
-  } catch (e: any) {
-    res.status(400).json({ error: e.message });
+router.post("/keysets", express.json(), async (req, res) => {
+  const { name, description } = req.body;
+  if (!name) {
+    res.status(400).json({ error: "Name is required" });
+    return;
   }
+  const keySet = await addKeySet(name, description || "");
+  res.json(keySet);
 });
+
+router.delete("/keysets/:id", async (req, res) => {
+  const { id } = req.params;
+  await removeKeySet(id);
+  res.json({ ok: true });
+});
+
+router.post(
+  "/keysets/:id/keys/:index/rotate",
+  async (req, res) => {
+    const { id, index } = req.params;
+    try {
+      const key = await rotateApiKey(id, Number(index));
+      res.json({ apiKey: key });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  },
+);
 
 export default router;

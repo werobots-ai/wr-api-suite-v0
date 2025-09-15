@@ -6,6 +6,8 @@ import { parseXlsx } from "../utils/xlsxParser";
 import { processSnippets } from "../utils/snippetProcessor";
 import { initStream } from "../utils/initStream";
 import { loadQuestionSet } from "../utils/questionStore";
+import { recordUsage } from "../utils/userStore";
+import pricing from "../config/pricing.json";
 
 const router = Router();
 const uploadDir = path.join(__dirname, "../../../uploads");
@@ -27,6 +29,28 @@ router.post("/", upload, async (req, res) => {
     res.end();
     return;
   }
+
+  const billResults = async (results: any[]) => {
+    const { userId, keySetId, keyId } = res.locals as {
+      userId: string;
+      keySetId: string;
+      keyId: string;
+    };
+    const tokenCost = results.reduce(
+      (sum, r) => sum + (r.metrics?.cost || 0),
+      0,
+    );
+    const requests = results.reduce(
+      (sum, r) => sum + (r.metrics?.requests || 0),
+      0,
+    );
+    const answered = results.reduce(
+      (sum, r) => sum + Object.keys(r.answers || {}).length,
+      0,
+    );
+    const billed = answered * pricing.questionAnswering;
+    await recordUsage(tokenCost, billed, "snippet_answering", userId, requests, keySetId, keyId);
+  };
 
   try {
     const allFiles = req.files as Express.Multer.File[];
@@ -128,6 +152,7 @@ router.post("/", upload, async (req, res) => {
         questionSetId: id,
         qaResults: newQaResults,
       });
+      await billResults(newQaResults);
     }
 
     // incoming snippets are one per file, accepted extensions: .txt and .md only (other than xlsx)
@@ -186,6 +211,7 @@ router.post("/", upload, async (req, res) => {
       questionSetId: questionSet.id,
       qaResults,
     });
+    await billResults(qaResults);
     sendEvent("done", { message: "All done!" });
     res.end();
   } catch (err: any) {
