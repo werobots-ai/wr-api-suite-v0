@@ -16,6 +16,7 @@ import { questionExecutionPlanner } from "../llmCalls/questionExecutionPlanner";
 import { v4 as uuid } from "uuid";
 import { marked } from "marked";
 import { QAResult } from "../types/Questions";
+import { deductCredits } from "../utils/userStore";
 
 const router = Router();
 
@@ -135,6 +136,8 @@ router.post("/", express.json(), async (req, res) => {
       }),
     ]);
 
+    let overallCost = reasoningCost + guidanceCost + executionPlanCost;
+
     console.debug(
       `Question guidance result: ${JSON.stringify(guidance, null, 2)}
       Guidance cost: ${guidanceCost}`,
@@ -162,6 +165,8 @@ router.post("/", express.json(), async (req, res) => {
           reasoningDocument,
           logger,
         });
+
+        overallCost += totalCost;
 
         sendLog(
           `Finalized ${result.question.questionType} question Q${result.question.questionId}: "${result.question.shortQuestionText}"`
@@ -210,6 +215,8 @@ router.post("/", express.json(), async (req, res) => {
             failedAttemptResult: f.reason,
           });
 
+          overallCost += totalCost;
+
           console.debug(
             `Finalized question ${guidance[i].question}: ${JSON.stringify(
               question,
@@ -238,6 +245,8 @@ router.post("/", express.json(), async (req, res) => {
     sendLog(`Saved question set with title "${title}"`);
 
     sendEvent("loadQuestionSet", { questionSetId: id });
+
+    await deductCredits(overallCost, "question_generation");
 
     sendLog(`DONE.`);
 
