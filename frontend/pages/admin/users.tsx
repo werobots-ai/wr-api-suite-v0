@@ -57,9 +57,10 @@ export default function AdminUsers() {
             {u.name} - {u.credits.toFixed(2)} credits
           </h2>
           {(() => {
-            const totalRequests = u.usage.reduce((a, b) => a + b.requests, 0);
-            const totalBilled = u.usage.reduce((a, b) => a + b.billedCost, 0);
-            const totalCost = u.usage.reduce((a, b) => a + b.tokenCost, 0);
+            const usage = u.usage.filter((e) => e.action !== "topup");
+            const totalRequests = usage.reduce((a, b) => a + b.requests, 0);
+            const totalBilled = usage.reduce((a, b) => a + b.billedCost, 0);
+            const totalCost = usage.reduce((a, b) => a + b.tokenCost, 0);
             return (
               <p className="summary">
                 {totalRequests} reqs / billed {totalBilled.toFixed(2)} / cost
