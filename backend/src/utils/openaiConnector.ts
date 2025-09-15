@@ -25,7 +25,7 @@ import { playMacSound } from "./playMacSound";
 
 const CACHE_DIR = process.env.CACHE_DIR
   ? path.resolve(process.env.CACHE_DIR)
-  : path.resolve(__dirname, "../../data/cache");
+  : path.resolve(__dirname, "../../../data/cache");
 
 type OpenAIResponse = OpenAI.Chat.Completions.ChatCompletion & {
   _request_id?: string | null;
