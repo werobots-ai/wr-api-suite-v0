@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon",
     "start": "ts-node src/index.ts",
-    "test": "node --require ts-node/register --test --experimental-test-coverage test/getGroupedReasoningWarning.test.ts"
+    "test": "node --require ts-node/register --test --experimental-test-coverage test/*.test.ts"
   },
   "keywords": [],
   "author": "",
