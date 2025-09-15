@@ -8,8 +8,8 @@ import { initStream } from "../utils/initStream";
 import { loadQuestionSet } from "../utils/questionStore";
 
 const router = Router();
-const uploadDir = path.join(__dirname, "../../../uploads");
-// const dataDir = path.join(__dirname, "../../../data/transcripts");
+const uploadDir = path.join(__dirname, "../../uploads");
+// const dataDir = path.join(__dirname, "../../data/transcripts");
 
 fs.mkdirSync(uploadDir, { recursive: true });
 // fs.mkdirSync(dataDir, { recursive: true });
