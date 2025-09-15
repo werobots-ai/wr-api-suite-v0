@@ -2,6 +2,7 @@ import { QAResult, QuestionSet } from "@/types/Questions";
 import { AppProps } from "next/app";
 import Link from "next/link";
 import { useState } from "react";
+import ApiKeyModal from "@/components/ApiKeyModal";
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   const [questionSet, setQuestionSet] = useState<QuestionSet | null>(null);
@@ -10,15 +11,15 @@ export default function MyApp({ Component, pageProps }: AppProps) {
 
   return (
     <div className="app-layout">
+      <ApiKeyModal />
       <nav className="app-nav">
         <div className="nav-links">
           <Link href="/questions">Questions</Link>
           {questionSet && (
             <>
-              {" "}
-              |{" "}
-              <Link href="/conversations">
-                Conversations
+              {" "}|{" "}
+              <Link href="/snippets">
+                Snippets
                 {Object.keys(snippets).length > 0
                   ? ` (${Object.keys(snippets).length})`
                   : ""}
@@ -28,6 +29,9 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         </div>
         <div className="nav-title">
           {questionSet?.title || "No question set loaded"}
+        </div>
+        <div className="nav-links">
+          <Link href="/account/billing">Account &amp; Billing</Link>
         </div>
       </nav>
       <main className="app-content">
@@ -65,6 +69,10 @@ export default function MyApp({ Component, pageProps }: AppProps) {
           background: #ffffff;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
+        .nav-links {
+          display: flex;
+          align-items: center;
+        }
         .app-nav a {
           margin: 0 0.75rem;
           color: #1890ff;
@@ -84,6 +92,8 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         .nav-title {
           font-size: 1rem;
           font-weight: 500;
+          flex: 1;
+          text-align: center;
         }
       `}</style>
     </div>

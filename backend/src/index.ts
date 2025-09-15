@@ -4,6 +4,7 @@ import questionsRouter from "./routes/questions";
 import accountRouter from "./routes/account";
 import { apiKeyAuth } from "./utils/apiKeyAuth";
 import cors from "cors";
+import pricingRouter from "./routes/pricing";
 
 import path from "path";
 
@@ -18,6 +19,7 @@ app.use("/data", express.static(path.join(__dirname, "../../data")));
 
 // account management
 app.use("/api/account", accountRouter);
+app.use("/api/pricing", pricingRouter);
 
 // main API router with API key auth
 app.use("/api/questions", apiKeyAuth, questionsRouter);
