@@ -9,6 +9,7 @@ import {
   QAResult,
 } from "@/types/Questions";
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import Link from "next/link";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -272,6 +273,9 @@ const QuestionSetPage: React.FC<
 
   return (
     <main className="container">
+      <div style={{ textAlign: "right" }}>
+        <Link href="/account/billing">Account &amp; Billing</Link>
+      </div>
       {showModal && (
         <div className="modal">
           {!isGenerating && !streamComplete && (
