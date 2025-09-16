@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">WR API Suite favicon</title>
+  <desc id="desc">Gradient badge with a WR monogram and connected nodes to represent workflow automation.</desc>
+  <defs>
+    <linearGradient id="wr-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#051029" />
+      <stop offset="55%" stop-color="#132d66" />
+      <stop offset="100%" stop-color="#2f7bff" />
+    </linearGradient>
+    <linearGradient id="wr-accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#91edff" />
+      <stop offset="100%" stop-color="#3fb5ff" />
+    </linearGradient>
+    <linearGradient id="wr-node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f6fbff" />
+      <stop offset="100%" stop-color="#bfeaff" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#wr-bg)" />
+  <path
+    d="M14 20 L20.5 44 L28 26.2 L35.5 44 L42 20"
+    fill="none"
+    stroke="#f6fbff"
+    stroke-width="5.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M36 44 V20 H47 C53 20 56 24.6 56 29.3 C56 34.3 52.7 38 47.1 38 H36 L53.2 56"
+    fill="none"
+    stroke="url(#wr-accent)"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M45.5 23.5 L53.5 31.5 L45.5 39.5"
+    fill="none"
+    stroke="url(#wr-accent)"
+    stroke-width="3.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="45.5" cy="23.5" r="3.1" fill="url(#wr-node)" />
+  <circle cx="53.5" cy="31.5" r="3.1" fill="url(#wr-node)" />
+  <circle cx="45.5" cy="39.5" r="3.1" fill="url(#wr-node)" />
+  <path
+    d="M18 50 H46"
+    stroke="#a4d5ff"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    opacity="0.65"
+  />
+</svg>

@@ -1,4 +1,5 @@
 import { QAResult, QuestionSet } from "@/types/Questions";
+import Head from "next/head";
 import { AppProps } from "next/app";
 import Link from "next/link";
 import { useState } from "react";
@@ -13,6 +14,10 @@ function InnerApp({ Component, pageProps }: AppProps) {
 
   return (
     <div className="app-layout">
+      <Head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <meta name="theme-color" content="#0F1D3B" />
+      </Head>
       <ApiKeyModal />
       <Navigation questionSet={questionSet} snippets={snippets} />
       <main className="app-content">
@@ -117,7 +122,15 @@ function Navigation({
   questionSet: QuestionSet | null;
   snippets: Record<string, QAResult>;
 }) {
-  const { user, permissions, organizations, activeOrgId, setActiveOrg, logout, loading } = useAuth();
+  const {
+    user,
+    permissions,
+    organizations,
+    activeOrgId,
+    setActiveOrg,
+    logout,
+    loading,
+  } = useAuth();
   const isSysAdmin = Boolean(user?.globalRoles.includes("SYSADMIN"));
   return (
     <nav className="app-nav">
