@@ -5,6 +5,7 @@ import {
   createOrUpdateOrgUser,
   getOrganization,
   getUsersForOrganization,
+  isInternalOrg,
   removeKeySet,
   rotateApiKey,
   toSafeOrganization,
@@ -42,14 +43,19 @@ router.get("/", async (req, res) => {
     return;
   }
 
+  const canViewInternalCosts = isInternalOrg(orgId);
+
   const permissions = {
     manageBilling: assertPermission(roles, ["OWNER", "BILLING"]),
     manageKeys: assertPermission(roles, ["OWNER", "ADMIN"]),
     manageUsers: assertPermission(roles, ["OWNER", "ADMIN"]),
+    viewInternalCosts: canViewInternalCosts,
   };
 
   res.json({
-    organization: toSafeOrganization(organization),
+    organization: toSafeOrganization(organization, {
+      maskCosts: !canViewInternalCosts,
+    }),
     user,
     permissions,
   });
@@ -61,7 +67,9 @@ router.get("/organizations", async (_req, res) => {
     await Promise.all(
       user.organizations.map(async (link) => {
         const org = await getOrganization(link.orgId);
-        return org ? toSafeOrganization(org) : null;
+        if (!org) return null;
+        const maskCosts = !isInternalOrg(org.id);
+        return toSafeOrganization(org, { maskCosts });
       }),
     )
   ).filter(
@@ -103,7 +111,8 @@ router.post("/keysets", express.json(), async (req, res) => {
   }
   const orgId = res.locals.activeOrgId as string;
   const actorId = res.locals.userId as string;
-  const result = await addKeySet(orgId, actorId, name, description || "");
+  const maskCosts = !isInternalOrg(orgId);
+  const result = await addKeySet(orgId, actorId, name, description || "", { maskCosts });
   res.json(result);
 });
 
@@ -134,7 +143,10 @@ router.post("/keysets/:id/keys/:index/rotate", async (req, res) => {
     return;
   }
   try {
-    const { apiKey, safeKey } = await rotateApiKey(orgId, id, parsed, actorId);
+    const maskCosts = !isInternalOrg(orgId);
+    const { apiKey, safeKey } = await rotateApiKey(orgId, id, parsed, actorId, {
+      maskCosts,
+    });
     res.json({ apiKey, key: safeKey });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

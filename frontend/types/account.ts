@@ -3,7 +3,7 @@ export type OrgRole = "OWNER" | "ADMIN" | "BILLING" | "MEMBER";
 export type UsageEntry = {
   timestamp: string;
   action: string;
-  tokenCost: number;
+  tokenCost: number | null;
   billedCost: number;
   requests: number;
   metadata?: Record<string, unknown>;
@@ -14,6 +14,7 @@ export type SafeApiKey = {
   maskedKey: string;
   lastFour: string;
   lastRotated: string;
+  lastAccessed: string | null;
   usage: UsageEntry[];
   createdAt: string;
   createdBy: string;
@@ -71,6 +72,7 @@ export type AccountPermissions = {
   manageBilling: boolean;
   manageKeys: boolean;
   manageUsers: boolean;
+  viewInternalCosts: boolean;
 };
 
 export type UsageTotals = {

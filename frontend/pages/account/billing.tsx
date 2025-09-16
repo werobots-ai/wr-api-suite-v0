@@ -47,6 +47,7 @@ export default function BillingPage() {
   const canManageBilling = Boolean(permissions?.manageBilling);
   const canManageUsers = Boolean(permissions?.manageUsers);
   const canViewMembers = canManageUsers || canManageBilling;
+  const canViewInternalCosts = Boolean(permissions?.viewInternalCosts);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing`)
@@ -209,7 +210,7 @@ export default function BillingPage() {
       organizationUsage.reduce(
         (acc, entry) => {
           acc.billed += entry.billedCost;
-          acc.token += entry.tokenCost;
+          acc.token += entry.tokenCost ?? 0;
           acc.requests += entry.requests;
           return acc;
         },
@@ -411,14 +412,30 @@ export default function BillingPage() {
                   {set.keys.map((k, idx) => {
                     const total = k.usage.reduce((a, b) => a + b.billedCost, 0);
                     const reqs = k.usage.reduce((a, b) => a + b.requests, 0);
-                    const spend = k.usage.reduce((a, b) => a + b.tokenCost, 0);
+                    const spend = k.usage.reduce((a, b) => a + (b.tokenCost ?? 0), 0);
+                    const rotatedDate = new Date(k.lastRotated);
+                    const lastAccessedDate = k.lastAccessed ? new Date(k.lastAccessed) : null;
+                    const lastAccessedLabel = lastAccessedDate
+                      ? lastAccessedDate.toLocaleString()
+                      : null;
                     return (
                       <li key={k.id}>
                         <div className="key-info">
                           <code>{k.maskedKey}</code>
-                          <span className="rotated">
-                            rotated {new Date(k.lastRotated).toLocaleString()}
-                          </span>
+                          <div className="key-meta">
+                            <span
+                              className="meta"
+                              title={rotatedDate.toISOString()}
+                            >
+                              Rotated {rotatedDate.toLocaleString()}
+                            </span>
+                            <span
+                              className="meta"
+                              title={lastAccessedDate ? lastAccessedDate.toISOString() : undefined}
+                            >
+                              {lastAccessedLabel ? `Last used ${lastAccessedLabel}` : "Never used"}
+                            </span>
+                          </div>
                         </div>
                         <div className="key-actions">
                           {canManageKeys && (
@@ -427,7 +444,11 @@ export default function BillingPage() {
                             </button>
                           )}
                           <span className="usage">
-                            {reqs} reqs · billed ${total.toFixed(2)} · OpenAI ${spend.toFixed(2)}
+                            <span>{reqs} reqs</span>
+                            <span title={`$${total}`}>billed ${total.toFixed(2)}</span>
+                            {canViewInternalCosts && (
+                              <span title={`$${spend}`}>OpenAI ${spend.toFixed(4)}</span>
+                            )}
                           </span>
                         </div>
                       </li>
@@ -463,9 +484,24 @@ export default function BillingPage() {
           <section id="section-usage" className="card">
             <h2>Usage</h2>
             <p className="hint">
-              {usageSummary.requests} requests billed ${usageSummary.billed.toFixed(2)} with an OpenAI cost of ${usageSummary.token.toFixed(2)}.
+              {usageSummary.requests} requests billed ${usageSummary.billed.toFixed(2)}
+              {canViewInternalCosts ? (
+                <>
+                  {" "}with an OpenAI cost of
+                  {" "}
+                  <span title={`$${usageSummary.token}`}>
+                    ${usageSummary.token.toFixed(4)}
+                  </span>
+                  .
+                </>
+              ) : (
+                "."
+              )}
             </p>
-            <UsageBreakdown entries={organizationUsage} />
+            <UsageBreakdown
+              entries={organizationUsage}
+              showCostColumns={canViewInternalCosts}
+            />
           </section>
 
           {canViewMembers && (
@@ -599,24 +635,42 @@ export default function BillingPage() {
         .section-nav button {
           width: 100%;
           text-align: left;
-          padding: 0.5rem 0.75rem;
-          border-radius: 6px;
+          padding: 0.35rem 0.75rem 0.35rem 1rem;
           border: none;
-          background: #fff;
-          color: #1890ff;
-          font-weight: 600;
+          border-radius: 0;
+          background: transparent;
+          color: #434343;
+          font-weight: 500;
           cursor: pointer;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          position: relative;
+          transition: color 0.2s ease;
+        }
+        .section-nav button::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 3px;
+          height: 1rem;
+          border-radius: 999px;
+          background: transparent;
+          transition: background 0.2s ease, height 0.2s ease;
         }
         .section-nav button:hover {
-          background: #e6f7ff;
+          color: #d48806;
+        }
+        .section-nav button:focus-visible {
+          outline: none;
+          color: #d48806;
         }
         .section-nav button.active {
-          background: #1890ff;
-          color: #fff;
+          color: #262626;
+          font-weight: 600;
         }
-        .section-nav button.active:hover {
-          background: #096dd9;
+        .section-nav button.active::before {
+          background: #d48806;
+          height: 70%;
         }
         .content {
           display: flex;
@@ -737,6 +791,18 @@ export default function BillingPage() {
           padding: 0.25rem 0.5rem;
           border-radius: 4px;
         }
+        .key-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          font-size: 0.75rem;
+          color: #777;
+        }
+        .key-meta .meta {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+        }
         ul {
           list-style: none;
           padding: 0;
@@ -770,10 +836,15 @@ export default function BillingPage() {
         .key-actions .usage {
           font-size: 0.85rem;
           color: #555;
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.35rem;
         }
-        .rotated {
-          font-size: 0.75rem;
-          color: #777;
+        .key-actions .usage span + span::before {
+          content: "·";
+          color: #bfbfbf;
+          margin: 0 0.25rem;
         }
         .add-set {
           display: flex;
@@ -866,6 +937,14 @@ export default function BillingPage() {
           }
           .section-nav button {
             flex: 1 1 auto;
+            padding-left: 0.75rem;
+          }
+          .section-nav button::before {
+            top: auto;
+            bottom: -0.15rem;
+            transform: none;
+            width: 100%;
+            height: 2px;
           }
         }
         @media (max-width: 640px) {

@@ -16,8 +16,8 @@ type RotateResponse = {
   key: SafeApiKey;
 };
 
-function formatCurrency(amount: number): string {
-  return `$${amount.toFixed(2)}`;
+function formatCurrency(amount: number, decimals = 2): string {
+  return `$${amount.toFixed(decimals)}`;
 }
 
 export default function AdminConsole() {
@@ -178,7 +178,12 @@ export default function AdminConsole() {
             </div>
             <div className="summary-card">
               <span className="label">OpenAI spend</span>
-              <span className="value">{formatCurrency(overview.totals.totalTokenCost)}</span>
+              <span
+                className="value"
+                title={`$${overview.totals.totalTokenCost}`}
+              >
+                {formatCurrency(overview.totals.totalTokenCost, 4)}
+              </span>
             </div>
             <div className="summary-card">
               <span className="label">Net revenue</span>
@@ -256,7 +261,9 @@ export default function AdminConsole() {
                           </div>
                         </td>
                         <td>{formatCurrency(entry.usage.totalBilled)}</td>
-                        <td>{formatCurrency(entry.usage.totalTokenCost)}</td>
+                        <td title={`$${entry.usage.totalTokenCost}`}>
+                          {formatCurrency(entry.usage.totalTokenCost, 4)}
+                        </td>
                         <td className={entry.usage.netRevenue >= 0 ? "positive" : "negative"}>
                           {formatCurrency(entry.usage.netRevenue)}
                         </td>
@@ -289,7 +296,12 @@ export default function AdminConsole() {
                     </div>
                     <div className="detail-card">
                       <span className="label">OpenAI spend</span>
-                      <span className="value">{formatCurrency(selectedMetrics.tokenCost)}</span>
+                      <span
+                        className="value"
+                        title={`$${selectedMetrics.tokenCost}`}
+                      >
+                        {formatCurrency(selectedMetrics.tokenCost, 4)}
+                      </span>
                     </div>
                     <div className="detail-card">
                       <span className="label">Net revenue</span>
@@ -345,20 +357,36 @@ export default function AdminConsole() {
                           {set.keys.map((key, index) => {
                             const billed = key.usage.reduce((sum, entry) => sum + entry.billedCost, 0);
                             const tokenCost = key.usage.reduce(
-                              (sum, entry) => sum + entry.tokenCost,
+                              (sum, entry) => sum + (entry.tokenCost ?? 0),
                               0,
                             );
                             const requests = key.usage.reduce(
                               (sum, entry) => sum + entry.requests,
                               0,
                             );
+                            const lastAccessedDate = key.lastAccessed
+                              ? new Date(key.lastAccessed)
+                              : null;
+                            const lastAccessedLabel = lastAccessedDate
+                              ? lastAccessedDate.toLocaleString()
+                              : null;
                             return (
                               <li key={key.id}>
                                 <div className="key-info">
                                   <code>{key.maskedKey}</code>
-                                  <span className="meta">
-                                    Rotated {new Date(key.lastRotated).toLocaleString()}
-                                  </span>
+                                  <div className="meta-group">
+                                    <span className="meta">
+                                      Rotated {new Date(key.lastRotated).toLocaleString()}
+                                    </span>
+                                    <span
+                                      className="meta"
+                                      title={lastAccessedDate ? lastAccessedDate.toISOString() : undefined}
+                                    >
+                                      {lastAccessedLabel
+                                        ? `Last used ${lastAccessedLabel}`
+                                        : "Never used"}
+                                    </span>
+                                  </div>
                                 </div>
                                 <div className="key-actions">
                                   <button
@@ -368,7 +396,11 @@ export default function AdminConsole() {
                                     Rotate
                                   </button>
                                   <span className="key-usage">
-                                    {requests} req · billed {formatCurrency(billed)} · OpenAI {formatCurrency(tokenCost)}
+                                    <span>{requests} req</span>
+                                    <span>billed {formatCurrency(billed)}</span>
+                                    <span title={`$${tokenCost}`}>
+                                      OpenAI {formatCurrency(tokenCost, 4)}
+                                    </span>
                                   </span>
                                 </div>
                               </li>
@@ -641,6 +673,13 @@ export default function AdminConsole() {
           padding: 0.25rem 0.5rem;
           border-radius: 4px;
         }
+        .meta-group {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          font-size: 0.75rem;
+          color: #777;
+        }
         .key-actions {
           display: flex;
           flex-direction: column;
@@ -658,6 +697,15 @@ export default function AdminConsole() {
         .key-actions .key-usage {
           font-size: 0.8rem;
           color: #595959;
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+        }
+        .key-actions .key-usage span + span::before {
+          content: "·";
+          color: #bfbfbf;
+          margin: 0 0.25rem;
         }
         .empty-state {
           background: #fafafa;

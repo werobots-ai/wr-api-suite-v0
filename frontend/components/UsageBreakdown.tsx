@@ -3,13 +3,19 @@ import { useState } from "react";
 export type UsageEntry = {
   timestamp: string;
   action: string;
-  tokenCost: number;
+  tokenCost: number | null;
   billedCost: number;
   requests: number;
   question?: string;
 };
 
-export default function UsageBreakdown({ entries }: { entries: UsageEntry[] }) {
+export default function UsageBreakdown({
+  entries,
+  showCostColumns = true,
+}: {
+  entries: UsageEntry[];
+  showCostColumns?: boolean;
+}) {
   const [filter, setFilter] = useState("");
   const filtered = entries.filter(
     (e) =>
@@ -35,22 +41,40 @@ export default function UsageBreakdown({ entries }: { entries: UsageEntry[] }) {
             <th>Action</th>
             <th>Question</th>
             <th>Billed ($)</th>
-            <th>OpenAI ($)</th>
-            <th>Net ($)</th>
+            {showCostColumns && <th>OpenAI ($)</th>}
+            {showCostColumns && <th>Net ($)</th>}
             <th>Requests</th>
           </tr>
         </thead>
         <tbody>
           {filtered.map((e, i) => {
-            const net = e.billedCost - e.tokenCost;
+            const net =
+              showCostColumns && e.tokenCost !== null ? e.billedCost - e.tokenCost : null;
             return (
               <tr key={i}>
                 <td>{new Date(e.timestamp).toLocaleString()}</td>
                 <td>{e.action}</td>
                 <td>{e.question || "-"}</td>
-                <td>{e.billedCost.toFixed(2)}</td>
-                <td>{e.tokenCost.toFixed(2)}</td>
-                <td className={net >= 0 ? "positive" : "negative"}>{net.toFixed(2)}</td>
+                <td title={`$${e.billedCost}`}>{e.billedCost.toFixed(2)}</td>
+                {showCostColumns && (
+                  <td title={e.tokenCost !== null ? `$${e.tokenCost}` : undefined}>
+                    {e.tokenCost !== null ? e.tokenCost.toFixed(4) : "—"}
+                  </td>
+                )}
+                {showCostColumns && (
+                  <td
+                    className={
+                      net !== null
+                        ? net >= 0
+                          ? "positive"
+                          : "negative"
+                        : undefined
+                    }
+                    title={net !== null ? `$${net}` : undefined}
+                  >
+                    {net !== null ? net.toFixed(4) : "—"}
+                  </td>
+                )}
                 <td>{e.requests}</td>
               </tr>
             );

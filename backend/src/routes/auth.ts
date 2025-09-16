@@ -3,6 +3,7 @@ import {
   createOrganizationWithOwner,
   getOrganization,
   getUserByEmail,
+  isInternalOrg,
   toSafeOrganization,
   toSafeUser,
   updateUserLastLogin,
@@ -32,7 +33,9 @@ router.post("/dev/signup", express.json(), async (req, res) => {
     res.json({
       token,
       user: toSafeUser(owner),
-      organization: toSafeOrganization(organization),
+      organization: toSafeOrganization(organization, {
+        maskCosts: !isInternalOrg(organization.id),
+      }),
       revealedApiKeys: apiKeys,
     });
   } catch (error: unknown) {
@@ -60,7 +63,9 @@ router.post("/dev/login", express.json(), async (req, res) => {
     await Promise.all(
       user.organizations.map(async (link) => {
         const org = await getOrganization(link.orgId);
-        return org ? toSafeOrganization(org) : null;
+        if (!org) return null;
+        const maskCosts = !isInternalOrg(org.id);
+        return toSafeOrganization(org, { maskCosts });
       }),
     )
   ).filter(

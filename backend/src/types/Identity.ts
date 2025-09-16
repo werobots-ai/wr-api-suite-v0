@@ -22,6 +22,7 @@ export interface StoredApiKey {
   keyHash: string;
   lastFour: string;
   lastRotated: string;
+  lastAccessed: string | null;
   usage: UsageEntry[];
   createdBy: string;
   createdAt: string;

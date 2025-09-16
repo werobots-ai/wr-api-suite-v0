@@ -19,6 +19,21 @@ const LEGACY_USERS_FILE = path.join(__dirname, "../../../data/users.json");
 const KEY_SECRET = process.env.API_KEY_SECRET || "local-dev-secret";
 const HASH_SECRET = process.env.API_KEY_HASH_SECRET || KEY_SECRET;
 
+const INTERNAL_ORG_IDS = new Set(
+  (process.env.WEROBOTS_INTERNAL_ORG_IDS || process.env.WEROBOTS_INTERNAL_ORG_ID || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0),
+);
+
+export interface SafeEntityOptions {
+  maskCosts?: boolean;
+}
+
+export function isInternalOrg(orgId: string): boolean {
+  return INTERNAL_ORG_IDS.has(orgId);
+}
+
 export interface UsageTotals {
   totalTokenCost: number;
   totalBilled: number;
@@ -275,6 +290,7 @@ function createStoredKeyFromPlain(key: string, actorId: string): StoredApiKey {
     keyHash: hashApiKey(key),
     lastFour: key.slice(-4),
     lastRotated: timestamp,
+    lastAccessed: null,
     usage: [],
     createdAt: timestamp,
     createdBy: actorId,
@@ -601,6 +617,7 @@ export async function recordUsage(params: {
     const key = keySet?.keys.find((k) => k.id === params.keyId);
     if (key) {
       key.usage.push(entry);
+      key.lastAccessed = entry.timestamp;
     }
   }
 
@@ -611,37 +628,45 @@ export function maskKey(lastFour: string): string {
   return maskFromLastFour(lastFour);
 }
 
-export function toSafeKey(set: StoredApiKey) {
+function toSafeUsageEntry(entry: UsageEntry, options: SafeEntityOptions = {}) {
+  return {
+    ...entry,
+    tokenCost: options.maskCosts ? null : entry.tokenCost,
+  };
+}
+
+export function toSafeKey(set: StoredApiKey, options: SafeEntityOptions = {}) {
   return {
     id: set.id,
     maskedKey: maskFromLastFour(set.lastFour),
     lastFour: set.lastFour,
     lastRotated: set.lastRotated,
-    usage: set.usage,
+    lastAccessed: set.lastAccessed ?? null,
+    usage: set.usage.map((entry) => toSafeUsageEntry(entry, options)),
     createdAt: set.createdAt,
     createdBy: set.createdBy,
   };
 }
 
-export function toSafeKeySet(set: KeySet) {
+export function toSafeKeySet(set: KeySet, options: SafeEntityOptions = {}) {
   return {
     id: set.id,
     name: set.name,
     description: set.description,
     createdAt: set.createdAt,
     createdBy: set.createdBy,
-    keys: set.keys.map(toSafeKey),
+    keys: set.keys.map((key) => toSafeKey(key, options)),
   };
 }
 
-export function toSafeOrganization(org: Organization) {
+export function toSafeOrganization(org: Organization, options: SafeEntityOptions = {}) {
   return {
     id: org.id,
     name: org.name,
     slug: org.slug,
     credits: org.credits,
-    usage: org.usage,
-    keySets: org.keySets.map(toSafeKeySet),
+    usage: org.usage.map((entry) => toSafeUsageEntry(entry, options)),
+    keySets: org.keySets.map((set) => toSafeKeySet(set, options)),
     billingProfile: org.billingProfile,
     members: org.members,
     createdAt: org.createdAt,
@@ -754,6 +779,7 @@ export async function addKeySet(
   actorId: string,
   name: string,
   description: string,
+  options: SafeEntityOptions = {},
 ): Promise<{ keySet: ReturnType<typeof toSafeKeySet>; revealedKeys: string[] }>
 {
   const store = await loadIdentity();
@@ -776,7 +802,7 @@ export async function addKeySet(
   org.keySets.push(keySet);
   await saveIdentity(store);
   return {
-    keySet: toSafeKeySet(keySet),
+    keySet: toSafeKeySet(keySet, options),
     revealedKeys: [keyAPlain, keyBPlain],
   };
 }
@@ -797,6 +823,7 @@ export async function rotateApiKey(
   setId: string,
   index: number,
   actorId: string,
+  options: SafeEntityOptions = {},
 ): Promise<{ apiKey: string; safeKey: ReturnType<typeof toSafeKey> }>
 {
   const store = await loadIdentity();
@@ -811,11 +838,12 @@ export async function rotateApiKey(
   const stored = createStoredKeyFromPlain(plain, actorId);
   keySet.keys[index] = stored;
   await saveIdentity(store);
-  return { apiKey: plain, safeKey: toSafeKey(stored) };
+  return { apiKey: plain, safeKey: toSafeKey(stored, options) };
 }
 
 export async function findOrgByApiKey(
   apiKey: string,
+  options: { recordAccess?: boolean } = {},
 ): Promise<{
   organization: Organization;
   keySet: KeySet;
@@ -827,6 +855,10 @@ export async function findOrgByApiKey(
     for (const keySet of org.keySets) {
       const key = keySet.keys.find((k) => k.keyHash === hash);
       if (key) {
+        if (options.recordAccess) {
+          key.lastAccessed = now();
+          await saveIdentity(store);
+        }
         return { organization: org, keySet, key };
       }
     }

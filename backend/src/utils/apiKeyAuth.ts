@@ -8,7 +8,7 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
     return;
   }
 
-  const match = await findOrgByApiKey(apiKey);
+  const match = await findOrgByApiKey(apiKey, { recordAccess: true });
   if (!match) {
     res.status(401).json({ error: "Invalid API key" });
     return;
