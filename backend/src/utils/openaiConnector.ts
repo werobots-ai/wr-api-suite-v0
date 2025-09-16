@@ -98,7 +98,6 @@ export async function openAIWithCache(
   };
 }> {
   await fs.mkdir(CACHE_DIR, { recursive: true });
-  //   await initStorage();
   const cfg = models[modelKey];
   if (!cfg) throw new Error(`Unknown model key "${modelKey}"`);
 
@@ -109,9 +108,7 @@ export async function openAIWithCache(
     ...(cfg.top_p && { top_p: cfg.top_p }),
     ...(cfg.seed && { seed: cfg.seed }),
     ...(cfg.max_tokens && { max_tokens: cfg.max_tokens }),
-
-    // might overwrite the above
-    ...options,
+    ...options, // allow callers to override defaults when needed
   };
 
   const hash = getObjectHash(params);
@@ -121,11 +118,6 @@ export async function openAIWithCache(
   try {
     const raw = await fs.readFile(cacheFile, "utf-8");
     const entry: CacheEntry = JSON.parse(raw);
-    // const costPrompt =
-    //   entry.usage.prompt_tokens * (cfg.cost.cachedIn / cfg.cost.quantity);
-    // const costCompletion = 0;
-    // const totalCost = costPrompt;
-    // await addUsage(totalCost);
 
     const cachedCostPrompt =
       entry.usage.prompt_tokens_details!.cached_tokens! *
@@ -144,7 +136,7 @@ export async function openAIWithCache(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
-    // return cached response
+    // Serve the cached response without touching the network.
     playMacSound(0);
 
     return {
@@ -155,16 +147,16 @@ export async function openAIWithCache(
       usage: entry.usage,
     };
   } catch {
-    // cache miss
+    // Cache miss: fall back to the live API call below.
   }
 
   const start = Date.now();
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Bit louder beep, so I catch it before I "Edua" it
+  // Emit an audible cue so cache misses are easy to notice during local dev.
   playMacSound(1);
 
-  // Call OpenAI API
+  // Issue the request to OpenAI and capture timings for cache metadata.
   const resp = await openai.chat.completions.create(params);
   const end = Date.now();
 
@@ -188,7 +180,6 @@ export async function openAIWithCache(
   };
 
   await fs.writeFile(cacheFile, JSON.stringify(entry, null, 2), "utf-8");
-  //   await addUsage(totalCost);
 
   return { response: resp, costPrompt, costCompletion, totalCost, usage };
 }

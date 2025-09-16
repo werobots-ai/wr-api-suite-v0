@@ -14,7 +14,6 @@ import {
 } from "../types/Identity";
 
 const IDENTITY_FILE = path.join(__dirname, "../../../data/identity.json");
-const LEGACY_USERS_FILE = path.join(__dirname, "../../../data/users.json");
 
 const KEY_SECRET = process.env.API_KEY_SECRET || "local-dev-secret";
 const HASH_SECRET = process.env.API_KEY_HASH_SECRET || KEY_SECRET;
@@ -87,82 +86,12 @@ async function loadIdentity(): Promise<IdentityStoreData> {
   try {
     const raw = await fs.readFile(IDENTITY_FILE, "utf-8");
     return JSON.parse(raw) as IdentityStoreData;
-  } catch (err) {
-    const store = await migrateLegacyStore();
-    if (store) return store;
+  } catch {
+    // If the identity store has not been created yet, initialize it with
+    // default development entities so the API can start immediately.
     const bootstrap = await createBootstrapIdentity();
     await saveIdentity(bootstrap);
     return bootstrap;
-  }
-}
-
-async function migrateLegacyStore(): Promise<IdentityStoreData | null> {
-  try {
-    const raw = await fs.readFile(LEGACY_USERS_FILE, "utf-8");
-    const legacy = JSON.parse(raw) as Record<string, any>;
-    const [legacyUser] = Object.values(legacy) as any[];
-    if (!legacyUser) return null;
-    const ownerId = uuid();
-    const orgId = uuid();
-    const created = now();
-    const keySets: KeySet[] = (legacyUser.keySets || []).map((set: any) => {
-      const keys = (set.keys || []).map((key: any) => {
-        const plain = key.key || uuid();
-        return createStoredKeyFromPlain(plain, ownerId);
-      });
-      return {
-        id: set.id || uuid(),
-        name: set.name || "Default",
-        description: set.description || "",
-        keys,
-        createdAt: created,
-        createdBy: ownerId,
-      };
-    });
-    const organization: Organization = {
-      id: orgId,
-      name: legacyUser.name || "Legacy Organization",
-      slug: slugify(legacyUser.name || "Legacy Organization"),
-      credits: legacyUser.credits || 0,
-      usage: legacyUser.usage || [],
-      keySets: keySets.length ? keySets : [createDefaultKeySet(ownerId)],
-      members: [
-        {
-          userId: ownerId,
-          roles: ["OWNER", "ADMIN", "BILLING"],
-          invitedAt: created,
-          joinedAt: created,
-          status: "active",
-        },
-      ],
-      billingProfile: {
-        contactEmail: `${legacyUser.name || "legacy"}@example.com`,
-      },
-      createdAt: created,
-      createdBy: ownerId,
-    };
-
-    const user: UserAccount = {
-      id: ownerId,
-      email: `${legacyUser.name || "legacy"}@example.com`,
-      name: legacyUser.name || "Legacy User",
-      passwordHash: createPasswordHash("changeme"),
-      globalRoles: [],
-      organizations: [{ orgId, roles: ["OWNER", "ADMIN", "BILLING"] }],
-      createdAt: created,
-      status: "active",
-    };
-
-    const store: IdentityStoreData = {
-      users: { [ownerId]: user },
-      organizations: { [orgId]: organization },
-      auditLog: [],
-    };
-
-    await saveIdentity(store);
-    return store;
-  } catch {
-    return null;
   }
 }
 

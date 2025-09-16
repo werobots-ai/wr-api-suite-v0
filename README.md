@@ -29,15 +29,22 @@ The WR API Suite monorepo houses the first production-ready pipeline for WeRobot
 - npm 9+
 
 ### Environment variables
-1. Copy the sample env file and provide a valid OpenAI API key:
+1. Bootstrap the backend configuration and provide a valid OpenAI API key:
    ```bash
-   cp .sample.env backend/.env.local
+   cp backend/.env.sample backend/.env.local
    ```
-2. Optional overrides:
+   Populate `OPENAI_API_KEY` with a usable secret before running the server.
+2. Optional backend overrides:
    - `API_KEY_SECRET` / `API_KEY_HASH_SECRET` to re-encrypt stored API keys.
    - `WEROBOTS_INTERNAL_ORG_IDS` to mark internal organizations whose costs should be fully revealed in the UI.
    - `CACHE_DIR` and `CACHE_SPEED_RATIO` to tune the cached OpenAI connector.
-   - `NEXT_PUBLIC_API_URL` (frontend) to point the web app at a remote backend instead of `http://localhost:4000`.
+   - `PLAY_SOUNDS` to silence cache hit/miss notifications (`0` or `false`).
+   - `PORT` to change the backend listener from the default `4000`.
+3. Configure the frontend (optional) if you need to point it at a different backend:
+   ```bash
+   cp frontend/.env.sample frontend/.env.local
+   ```
+   Update `NEXT_PUBLIC_API_URL` to the desired API host. The sample defaults to the local backend started by `dev.sh`.
 
 ### Install dependencies
 ```bash
