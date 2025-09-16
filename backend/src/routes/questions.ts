@@ -16,7 +16,7 @@ import { questionExecutionPlanner } from "../llmCalls/questionExecutionPlanner";
 import { v4 as uuid } from "uuid";
 import { marked } from "marked";
 import { QAResult } from "../types/Questions";
-import { recordUsage, getUser } from "../utils/userStore";
+import { recordUsage } from "../utils/userStore";
 import pricing from "../config/pricing.json";
 
 const router = Router();
@@ -247,16 +247,23 @@ router.post("/", express.json(), async (req, res) => {
 
     sendEvent("loadQuestionSet", { questionSetId: id });
 
-    const { userId, keySetId, keyId } = res.locals as {
-      userId: string;
+    const { orgId, keySetId, keyId } = res.locals as {
+      orgId: string;
       keySetId: string;
       keyId: string;
     };
-    const user = await getUser(userId);
     const questionCount = finalizedFields.length;
     const billed = questionCount * pricing.questionGeneration;
     const requests = questionCount + 3; // reasoner + guidance + plan + per question finalizer
-    await recordUsage(overallCost, billed, "question_generation", user.id, requests, keySetId, keyId);
+    await recordUsage({
+      orgId,
+      tokenCost: overallCost,
+      billedCost: billed,
+      action: "question_generation",
+      requests,
+      keySetId,
+      keyId,
+    });
 
     sendLog(`DONE.`);
 

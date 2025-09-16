@@ -1,5 +1,5 @@
 import { RequestHandler } from "express";
-import { getUser } from "./userStore";
+import { findOrgByApiKey } from "./userStore";
 
 export const apiKeyAuth: RequestHandler = async (req, res, next) => {
   const apiKey = req.header("x-api-key");
@@ -8,27 +8,15 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
     return;
   }
 
-  const user = await getUser();
-  let match: { keySetId: string; keyId: string } | null = null;
-
-  for (const set of user.keySets) {
-    for (const key of set.keys) {
-      if (key.key === apiKey) {
-        match = { keySetId: set.id, keyId: key.id };
-        break;
-      }
-    }
-    if (match) break;
-  }
-
+  const match = await findOrgByApiKey(apiKey);
   if (!match) {
     res.status(401).json({ error: "Invalid API key" });
     return;
   }
 
-  res.locals.userId = user.id;
-  res.locals.keySetId = match.keySetId;
-  res.locals.keyId = match.keyId;
+  res.locals.orgId = match.organization.id;
+  res.locals.keySetId = match.keySet.id;
+  res.locals.keyId = match.key.id;
 
   next();
 };
