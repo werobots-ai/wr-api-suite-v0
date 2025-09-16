@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { requireAuth } from "../middleware/requireAuth";
-import { getOrganizations, rotateApiKey, toSafeOrganization } from "../utils/userStore";
+import { getPlatformOverview, rotateApiKey } from "../utils/userStore";
 
 const router = Router();
 
@@ -14,10 +14,16 @@ function ensureSysAdmin(res: Response): boolean {
   return true;
 }
 
+router.get("/overview", async (_req, res) => {
+  if (!ensureSysAdmin(res)) return;
+  const overview = await getPlatformOverview();
+  res.json(overview);
+});
+
 router.get("/organizations", async (_req, res) => {
   if (!ensureSysAdmin(res)) return;
-  const orgs = await getOrganizations();
-  res.json({ organizations: orgs.map(toSafeOrganization) });
+  const overview = await getPlatformOverview();
+  res.json({ organizations: overview.organizations });
 });
 
 router.post(

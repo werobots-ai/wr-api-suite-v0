@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
+import KeyRevealModal from "@/components/KeyRevealModal";
 
 export default function DevAuthPage() {
   const { login, signup, user, loading } = useAuth();
@@ -13,7 +14,7 @@ export default function DevAuthPage() {
     ownerPassword: "",
     billingEmail: "",
   });
-  const [revealedKeys, setRevealedKeys] = useState<string[] | null>(null);
+  const [keyModalKeys, setKeyModalKeys] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -28,7 +29,7 @@ export default function DevAuthPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
-    setRevealedKeys(null);
+    setKeyModalKeys([]);
     setSubmitting(true);
     try {
       await login(loginForm.email, loginForm.password);
@@ -54,7 +55,7 @@ export default function DevAuthPage() {
         ownerPassword: signupForm.ownerPassword,
         billingEmail: signupForm.billingEmail || undefined,
       });
-      setRevealedKeys(result.revealedApiKeys);
+      setKeyModalKeys(result.revealedApiKeys || []);
       setMessage(
         "Organization created. Copy the API keys now—they will not be shown again.",
       );
@@ -68,6 +69,13 @@ export default function DevAuthPage() {
 
   return (
     <div className="auth-container">
+      <KeyRevealModal
+        isOpen={keyModalKeys.length > 0}
+        keys={keyModalKeys}
+        context="Organization created. Copy the API keys now—they will not be shown again."
+        title="New API keys"
+        onClose={() => setKeyModalKeys([])}
+      />
       <div className="card">
         <h1>Developer Authentication</h1>
         <p>
@@ -77,19 +85,6 @@ export default function DevAuthPage() {
         </p>
         {message && <div className="notice success">{message}</div>}
         {error && <div className="notice error">{error}</div>}
-        {revealedKeys && revealedKeys.length > 0 && (
-          <div className="notice warning">
-            <strong>New API keys</strong>
-            <p>Copy these values now. They will not be displayed again.</p>
-            <ul>
-              {revealedKeys.map((key) => (
-                <li key={key}>
-                  <code>{key}</code>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
         <div className="forms">
           <form onSubmit={handleLogin} className="panel">
             <h2>Log in</h2>
@@ -249,25 +244,6 @@ export default function DevAuthPage() {
         .notice.error {
           background: #fff2f0;
           border: 1px solid #ffccc7;
-        }
-        .notice.warning {
-          background: #fff7e6;
-          border: 1px solid #ffd591;
-        }
-        .notice.warning ul {
-          margin: 0.5rem 0 0;
-          padding: 0;
-          list-style: none;
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-        .notice.warning code {
-          background: #000;
-          color: #fff;
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          display: inline-block;
         }
       `}</style>
     </div>

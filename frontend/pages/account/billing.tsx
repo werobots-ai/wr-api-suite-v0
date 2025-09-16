@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import KeyRevealModal from "@/components/KeyRevealModal";
 import UsageBreakdown from "@/components/UsageBreakdown";
 import { fetchJSON } from "@/lib/api";
 import { OrgRole, SafeApiKey, SafeKeySet, SafeUser, UsageEntry } from "@/types/account";
@@ -16,6 +17,7 @@ type MemberInfo = SafeUser & { roles: OrgRole[] };
 type KeyReveal = {
   keys: string[];
   context: string;
+  title?: string;
 };
 
 const ROLE_OPTIONS: { label: string; value: OrgRole }[] = [
@@ -30,7 +32,7 @@ export default function BillingPage() {
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [amount, setAmount] = useState<number>(0);
   const [newSet, setNewSet] = useState({ name: "", description: "" });
-  const [reveals, setReveals] = useState<KeyReveal | null>(null);
+  const [revealModal, setRevealModal] = useState<KeyReveal | null>(null);
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [memberForm, setMemberForm] = useState({
     email: "",
@@ -86,11 +88,11 @@ export default function BillingPage() {
       body: JSON.stringify({ amount }),
     });
     setAmount(0);
-    setReveals(null);
+    setRevealModal(null);
     await refreshAccount();
   };
 
-  const handleRotate = async (setId: string, index: number) => {
+  const handleRotate = async (setId: string, setName: string, index: number) => {
     if (!canManageKeys) return;
     const result = await fetchJSON<{
       apiKey: string;
@@ -98,9 +100,10 @@ export default function BillingPage() {
     }>(`${API_URL}/api/account/keysets/${setId}/keys/${index}/rotate`, {
       method: "POST",
     });
-    setReveals({
+    setRevealModal({
       keys: [result.apiKey],
-      context: "Rotated API key. Store this new value securely.",
+      context: `API key for "${setName}" rotated. The previous key is now inactive. Save this value in your secrets manager before closing this dialog.`,
+      title: "API key rotated",
     });
     await refreshAccount();
   };
@@ -116,9 +119,10 @@ export default function BillingPage() {
       body: JSON.stringify(newSet),
     });
     setNewSet({ name: "", description: "" });
-    setReveals({
+    setRevealModal({
       keys: result.revealedKeys,
-      context: `Key set "${result.keySet.name}" created. Share these keys only with trusted clients.`,
+      context: `Key set "${result.keySet.name}" created. Share these values only with trusted clients and store them securely.`,
+      title: "New API keys issued",
     });
     await refreshAccount();
   };
@@ -181,6 +185,105 @@ export default function BillingPage() {
     [organization?.usage],
   );
 
+  const orgStats = useMemo(
+    () => {
+      if (!organization) {
+        return { keySets: 0, apiKeys: 0, members: 0 };
+      }
+      const apiKeys = organization.keySets.reduce(
+        (total, set) => total + set.keys.length,
+        0,
+      );
+      const members = organization.members.filter((member) => member.status === "active").length;
+      return {
+        keySets: organization.keySets.length,
+        apiKeys,
+        members,
+      };
+    },
+    [organization],
+  );
+
+  const usageSummary = useMemo(
+    () =>
+      organizationUsage.reduce(
+        (acc, entry) => {
+          acc.billed += entry.billedCost;
+          acc.token += entry.tokenCost;
+          acc.requests += entry.requests;
+          return acc;
+        },
+        { billed: 0, token: 0, requests: 0 },
+      ),
+    [organizationUsage],
+  );
+
+  const sectionItems = useMemo(
+    () =>
+      [
+        { id: "section-overview", label: "Overview" },
+        pricing
+          ? { id: "section-pricing", label: "Pricing" }
+          : null,
+        { id: "section-credits", label: "Credits & top-ups" },
+        { id: "section-keys", label: "API access" },
+        { id: "section-usage", label: "Usage history" },
+        canViewMembers
+          ? { id: "section-members", label: "Members" }
+          : null,
+      ].filter(
+        (item): item is { id: string; label: string } => item !== null,
+      ),
+    [pricing, canViewMembers],
+  );
+
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sectionItems.length) return;
+    if (typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const fallback = sectionItems[0]?.id ?? null;
+    if (!activeSection && fallback) {
+      setActiveSection(fallback);
+    } else if (
+      activeSection &&
+      !sectionItems.some((section) => section.id === activeSection) &&
+      fallback &&
+      activeSection !== fallback
+    ) {
+      setActiveSection(fallback);
+    }
+    const order = new Map(sectionItems.map((section, index) => [section.id, index] as const));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (a, b) => (order.get(a.target.id) ?? 0) - (order.get(b.target.id) ?? 0),
+          );
+        if (visible.length > 0) {
+          setActiveSection(visible[0].target.id);
+        }
+      },
+      { rootMargin: "-35% 0px -50% 0px", threshold: 0.2 },
+    );
+    sectionItems.forEach((section) => {
+      const node = document.getElementById(section.id);
+      if (node) observer.observe(node);
+    });
+    return () => observer.disconnect();
+  }, [sectionItems, activeSection]);
+
+  const handleNavClick = (id: string) => {
+    const node = document.getElementById(id);
+    if (node) {
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setActiveSection(id);
+  };
+
   if (loading && !organization) {
     return <div className="container">Loading...</div>;
   }
@@ -198,232 +301,291 @@ export default function BillingPage() {
 
   return (
     <div className="container">
-      <h1>{organization.name} &mdash; Usage &amp; Billing</h1>
-      {reveals && (
-        <div className="card warning">
-          <h2>New credentials</h2>
-          <p>{reveals.context}</p>
+      <KeyRevealModal
+        isOpen={Boolean(revealModal)}
+        keys={revealModal?.keys ?? []}
+        context={revealModal?.context ?? ""}
+        title={revealModal?.title ?? "Secrets generated"}
+        onClose={() => setRevealModal(null)}
+      />
+      <div className="layout">
+        <aside className="section-nav">
+          <h2>Account index</h2>
           <ul>
-            {reveals.keys.map((key) => (
-              <li key={key}>
-                <code>{key}</code>
+            {sectionItems.map((section) => (
+              <li key={section.id}>
+                <button
+                  type="button"
+                  className={section.id === activeSection ? "active" : ""}
+                  onClick={() => handleNavClick(section.id)}
+                >
+                  {section.label}
+                </button>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-      {pricing && (
-        <div className="card">
-          <h2>Pricing</h2>
-          <p>
-            Question generation: ${pricing.questionGeneration.toFixed(2)} per
-            question
-          </p>
-          <p>
-            Question answering: ${pricing.questionAnswering.toFixed(2)} per
-            question
-          </p>
-        </div>
-      )}
-      <div className="card">
-        <h2>Credits</h2>
-        <p className="metric">${organization.credits.toFixed(2)}</p>
-        {canManageBilling && (
-          <div className="topup">
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => {
-                const value = Number(e.target.value);
-                setAmount(Number.isNaN(value) ? 0 : value);
-              }}
-              placeholder="Amount"
-              min={0}
-            />
-            <button onClick={handleTopUp} disabled={amount <= 0}>
-              Top Up
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>API Key Sets</h2>
-        {organization.keySets.map((set) => (
-          <div key={set.id} className="keyset">
-            <div className="keyset-header">
-              <div>
-                <h3>{set.name}</h3>
-                <p className="meta">Created {new Date(set.createdAt).toLocaleString()}</p>
+        </aside>
+        <div className="content">
+          <section id="section-overview" className="card hero">
+            <h1>{organization.name}</h1>
+            <p>
+              Manage billing, API credentials, and team access for your organization.
+            </p>
+            <div className="stat-grid">
+              <div className="stat">
+                <span className="label">Available credits</span>
+                <span className="value">${organization.credits.toFixed(2)}</span>
               </div>
-              {canManageKeys && (
-                <button onClick={() => handleRemoveKeySet(set.id)}>Remove</button>
-              )}
+              <div className="stat">
+                <span className="label">API key sets</span>
+                <span className="value">{orgStats.keySets}</span>
+              </div>
+              <div className="stat">
+                <span className="label">Active API keys</span>
+                <span className="value">{orgStats.apiKeys}</span>
+              </div>
+              <div className="stat">
+                <span className="label">Active members</span>
+                <span className="value">{orgStats.members}</span>
+              </div>
             </div>
-            <p>{set.description}</p>
-            <ul>
-              {set.keys.map((k, idx) => {
-                const total = k.usage.reduce((a, b) => a + b.billedCost, 0);
-                const reqs = k.usage.reduce((a, b) => a + b.requests, 0);
-                return (
-                  <li key={k.id}>
-                    <div className="key-info">
-                      <code>{k.maskedKey}</code>
-                      <span className="rotated">
-                        rotated {new Date(k.lastRotated).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="key-actions">
-                      {canManageKeys && (
-                        <button onClick={() => handleRotate(set.id, idx)}>
-                          Rotate
-                        </button>
-                      )}
-                      <span className="usage">
-                        {reqs} reqs / {total.toFixed(2)} billed
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-        {canManageKeys && (
-          <div className="add-set">
-            <input
-              type="text"
-              placeholder="Name"
-              value={newSet.name}
-              onChange={(e) => setNewSet({ ...newSet, name: e.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="Description"
-              value={newSet.description}
-              onChange={(e) =>
-                setNewSet({ ...newSet, description: e.target.value })
-              }
-            />
-            <button onClick={handleAddKeySet} disabled={!newSet.name}>
-              Add Key Set
-            </button>
-          </div>
-        )}
-      </div>
+          </section>
 
-      <div className="card">
-        <h2>Usage</h2>
-        <UsageBreakdown entries={organizationUsage} />
-      </div>
+          {pricing && (
+            <section id="section-pricing" className="card">
+              <h2>Pricing</h2>
+              <p>
+                Question generation: ${pricing.questionGeneration.toFixed(2)} per request
+              </p>
+              <p>
+                Question answering: ${pricing.questionAnswering.toFixed(2)} per request
+              </p>
+              <p className="hint">
+                These figures mirror our live pricing tables. Stripe billing will be wired here soon.
+              </p>
+            </section>
+          )}
 
-      {canViewMembers && (
-        <div className="card">
-          <h2>Organization members</h2>
-          {memberMessage && <div className="notice success">{memberMessage}</div>}
-          {memberError && <div className="notice error">{memberError}</div>}
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Roles</th>
-                <th>Last login</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr key={member.id}>
-                  <td>{member.name}</td>
-                  <td>{member.email}</td>
-                  <td>{member.roles.join(", ")}</td>
-                  <td>
-                    {member.lastLoginAt
-                      ? new Date(member.lastLoginAt).toLocaleString()
-                      : "Never"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {canManageUsers && (
-            <div className="member-form">
-              <h3>Add or update member</h3>
-              <div className="form-grid">
-                <label>
-                  Name
-                  <input
-                    type="text"
-                    value={memberForm.name}
-                    onChange={(e) =>
-                      setMemberForm({ ...memberForm, name: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={memberForm.email}
-                    onChange={(e) =>
-                      setMemberForm({ ...memberForm, email: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Temporary password (optional)
-                  <input
-                    type="text"
-                    value={memberForm.password}
-                    onChange={(e) =>
-                      setMemberForm({ ...memberForm, password: e.target.value })
-                    }
-                  />
-                </label>
+          <section id="section-credits" className="card">
+            <h2>Credits &amp; top-ups</h2>
+            <p className="metric">${organization.credits.toFixed(2)}</p>
+            {canManageBilling ? (
+              <div className="topup">
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    setAmount(Number.isNaN(value) ? 0 : value);
+                  }}
+                  placeholder="Amount"
+                  min={0}
+                />
+                <button onClick={handleTopUp} disabled={amount <= 0}>
+                  Top Up
+                </button>
               </div>
-              <fieldset>
-                <legend>Roles</legend>
-                <div className="role-grid">
-                  {ROLE_OPTIONS.map((role) => (
-                    <label key={role.value}>
-                      <input
-                        type="checkbox"
-                        checked={memberForm.roles.includes(role.value)}
-                        onChange={() => toggleRole(role.value)}
-                      />
-                      {role.label}
-                    </label>
-                  ))}
+            ) : (
+              <p className="hint">Contact your organization owner or billing admin to add funds.</p>
+            )}
+          </section>
+
+          <section id="section-keys" className="card">
+            <h2>API access</h2>
+            <p className="hint">
+              Rotate keys routinely and revoke them immediately if they are suspected to be compromised.
+            </p>
+            {organization.keySets.map((set) => (
+              <div key={set.id} className="keyset">
+                <div className="keyset-header">
+                  <div>
+                    <h3>{set.name}</h3>
+                    <p className="meta">Created {new Date(set.createdAt).toLocaleString()}</p>
+                  </div>
+                  {canManageKeys && (
+                    <button onClick={() => handleRemoveKeySet(set.id)}>Remove</button>
+                  )}
                 </div>
-              </fieldset>
-              <button onClick={handleCreateMember}>Save member</button>
-            </div>
+                <p>{set.description}</p>
+                <ul>
+                  {set.keys.map((k, idx) => {
+                    const total = k.usage.reduce((a, b) => a + b.billedCost, 0);
+                    const reqs = k.usage.reduce((a, b) => a + b.requests, 0);
+                    const spend = k.usage.reduce((a, b) => a + b.tokenCost, 0);
+                    return (
+                      <li key={k.id}>
+                        <div className="key-info">
+                          <code>{k.maskedKey}</code>
+                          <span className="rotated">
+                            rotated {new Date(k.lastRotated).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="key-actions">
+                          {canManageKeys && (
+                            <button onClick={() => handleRotate(set.id, set.name, idx)}>
+                              Rotate
+                            </button>
+                          )}
+                          <span className="usage">
+                            {reqs} reqs · billed ${total.toFixed(2)} · OpenAI ${spend.toFixed(2)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+            {organization.keySets.length === 0 && (
+              <p className="hint">No key sets have been created yet.</p>
+            )}
+            {canManageKeys && (
+              <div className="add-set">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={newSet.name}
+                  onChange={(e) => setNewSet({ ...newSet, name: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Description"
+                  value={newSet.description}
+                  onChange={(e) => setNewSet({ ...newSet, description: e.target.value })}
+                />
+                <button onClick={handleAddKeySet} disabled={!newSet.name}>
+                  Add Key Set
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section id="section-usage" className="card">
+            <h2>Usage</h2>
+            <p className="hint">
+              {usageSummary.requests} requests billed ${usageSummary.billed.toFixed(2)} with an OpenAI cost of ${usageSummary.token.toFixed(2)}.
+            </p>
+            <UsageBreakdown entries={organizationUsage} />
+          </section>
+
+          {canViewMembers && (
+            <section id="section-members" className="card">
+              <h2>Organization members</h2>
+              {memberMessage && <div className="notice success">{memberMessage}</div>}
+              {memberError && <div className="notice error">{memberError}</div>}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Roles</th>
+                    <th>Last login</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((member) => (
+                    <tr key={member.id}>
+                      <td>{member.name}</td>
+                      <td>{member.email}</td>
+                      <td>{member.roles.join(", ")}</td>
+                      <td>
+                        {member.lastLoginAt
+                          ? new Date(member.lastLoginAt).toLocaleString()
+                          : "Never"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canManageUsers && (
+                <div className="member-form">
+                  <h3>Add or update member</h3>
+                  <div className="form-grid">
+                    <label>
+                      Name
+                      <input
+                        type="text"
+                        value={memberForm.name}
+                        onChange={(e) =>
+                          setMemberForm({ ...memberForm, name: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={memberForm.email}
+                        onChange={(e) =>
+                          setMemberForm({ ...memberForm, email: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Temporary password (optional)
+                      <input
+                        type="text"
+                        value={memberForm.password}
+                        onChange={(e) =>
+                          setMemberForm({ ...memberForm, password: e.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Roles</legend>
+                    <div className="role-grid">
+                      {ROLE_OPTIONS.map((role) => (
+                        <label key={role.value}>
+                          <input
+                            type="checkbox"
+                            checked={memberForm.roles.includes(role.value)}
+                            onChange={() => toggleRole(role.value)}
+                          />
+                          {role.label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <button onClick={handleCreateMember}>Save member</button>
+                </div>
+              )}
+            </section>
           )}
         </div>
-      )}
-
+      </div>
       <style jsx>{`
         .container {
           display: flex;
           flex-direction: column;
           flex: 1 1 auto;
           background: #f0f2f5;
-          padding: 1rem;
+          padding: 1.5rem;
           gap: 1rem;
+          overflow-y: auto;
         }
-        .card {
-          background: #fff;
-          padding: 1rem;
-          border-radius: 4px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        .layout {
+          display: grid;
+          grid-template-columns: minmax(220px, 260px) 1fr;
+          gap: 1.5rem;
+          align-items: start;
+        }
+        .section-nav {
+          position: sticky;
+          top: 1.5rem;
+          align-self: flex-start;
           display: flex;
           flex-direction: column;
           gap: 0.75rem;
         }
-        .card.warning {
-          border-left: 4px solid #faad14;
+        .section-nav h2 {
+          margin: 0;
+          font-size: 0.85rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #666;
         }
-        .card.warning ul {
+        .section-nav ul {
           list-style: none;
           margin: 0;
           padding: 0;
@@ -431,20 +593,95 @@ export default function BillingPage() {
           flex-direction: column;
           gap: 0.5rem;
         }
-        .card.warning code {
-          background: #000;
+        .section-nav li {
+          margin: 0;
+        }
+        .section-nav button {
+          width: 100%;
+          text-align: left;
+          padding: 0.5rem 0.75rem;
+          border-radius: 6px;
+          border: none;
+          background: #fff;
+          color: #1890ff;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .section-nav button:hover {
+          background: #e6f7ff;
+        }
+        .section-nav button.active {
+          background: #1890ff;
           color: #fff;
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          display: inline-block;
+        }
+        .section-nav button.active:hover {
+          background: #096dd9;
+        }
+        .content {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .card {
+          background: #fff;
+          padding: 1.25rem;
+          border-radius: 8px;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          scroll-margin-top: 96px;
+        }
+        .card h2 {
+          margin: 0;
+        }
+        .hero h1 {
+          margin: 0;
+          font-size: 1.75rem;
+        }
+        .hero p {
+          margin: 0;
+          color: #555;
+        }
+        .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 0.75rem;
+        }
+        .stat {
+          background: #fafafa;
+          border: 1px solid #f0f0f0;
+          border-radius: 6px;
+          padding: 0.75rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+        .stat .label {
+          font-size: 0.75rem;
+          color: #666;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .stat .value {
+          font-size: 1.35rem;
+          font-weight: 600;
         }
         .metric {
           font-size: 2rem;
           font-weight: 600;
+          margin: 0;
+        }
+        .hint {
+          margin: 0;
+          font-size: 0.9rem;
+          color: #666;
         }
         .topup {
           display: flex;
           gap: 0.5rem;
+          flex-wrap: wrap;
           align-items: center;
         }
         .topup input {
@@ -468,16 +705,37 @@ export default function BillingPage() {
           border-top: 1px solid #eee;
           padding-top: 0.5rem;
           margin-top: 0.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
         }
         .keyset-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 1rem;
+        }
+        .keyset-header button {
+          padding: 0.35rem 0.75rem;
+          border: 1px solid #ff4d4f;
+          border-radius: 4px;
+          background: #fff1f0;
+          color: #cf1322;
+          cursor: pointer;
+        }
+        .keyset-header button:hover {
+          background: #ffa39e;
+          color: #a8071a;
         }
         .key-info {
           display: flex;
           flex-direction: column;
           gap: 0.25rem;
+        }
+        .key-info code {
+          background: #f6f6f6;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
         }
         ul {
           list-style: none;
@@ -488,7 +746,9 @@ export default function BillingPage() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 0.25rem 0;
+          gap: 0.75rem;
+          padding: 0.35rem 0;
+          flex-wrap: wrap;
         }
         .key-actions {
           display: flex;
@@ -497,9 +757,17 @@ export default function BillingPage() {
           gap: 0.25rem;
         }
         .key-actions button {
-          padding: 0.25rem 0.5rem;
+          padding: 0.25rem 0.6rem;
+          border: none;
+          border-radius: 4px;
+          background: #1890ff;
+          color: #fff;
+          cursor: pointer;
         }
-        .usage {
+        .key-actions button:hover {
+          background: #096dd9;
+        }
+        .key-actions .usage {
           font-size: 0.85rem;
           color: #555;
         }
@@ -511,6 +779,7 @@ export default function BillingPage() {
           display: flex;
           gap: 0.5rem;
           flex-wrap: wrap;
+          margin-top: 0.75rem;
         }
         .add-set input {
           padding: 0.5rem;
@@ -547,6 +816,12 @@ export default function BillingPage() {
           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 0.75rem;
         }
+        .form-grid label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          font-weight: 500;
+        }
         .form-grid input {
           padding: 0.5rem;
           border: 1px solid #d9d9d9;
@@ -556,6 +831,10 @@ export default function BillingPage() {
           border: 1px solid #d9d9d9;
           border-radius: 4px;
           padding: 0.75rem;
+        }
+        legend {
+          padding: 0 0.5rem;
+          font-weight: 600;
         }
         .role-grid {
           display: grid;
@@ -573,6 +852,39 @@ export default function BillingPage() {
         .notice.error {
           background: #fff2f0;
           border: 1px solid #ffccc7;
+        }
+        @media (max-width: 960px) {
+          .layout {
+            grid-template-columns: 1fr;
+          }
+          .section-nav {
+            position: static;
+          }
+          .section-nav ul {
+            flex-direction: row;
+            flex-wrap: wrap;
+          }
+          .section-nav button {
+            flex: 1 1 auto;
+          }
+        }
+        @media (max-width: 640px) {
+          .topup {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .topup button {
+            width: 100%;
+          }
+          .key-actions {
+            align-items: flex-start;
+          }
+          .key-actions button {
+            width: 100%;
+          }
+          .section-nav button {
+            font-size: 0.9rem;
+          }
         }
       `}</style>
     </div>

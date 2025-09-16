@@ -34,18 +34,27 @@ export default function UsageBreakdown({ entries }: { entries: UsageEntry[] }) {
             <th>Time</th>
             <th>Action</th>
             <th>Question</th>
-            <th>Cost</th>
+            <th>Billed ($)</th>
+            <th>OpenAI ($)</th>
+            <th>Net ($)</th>
+            <th>Requests</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((e, i) => (
-            <tr key={i}>
-              <td>{new Date(e.timestamp).toLocaleString()}</td>
-              <td>{e.action}</td>
-              <td>{e.question || "-"}</td>
-              <td>{e.billedCost.toFixed(2)}</td>
-            </tr>
-          ))}
+          {filtered.map((e, i) => {
+            const net = e.billedCost - e.tokenCost;
+            return (
+              <tr key={i}>
+                <td>{new Date(e.timestamp).toLocaleString()}</td>
+                <td>{e.action}</td>
+                <td>{e.question || "-"}</td>
+                <td>{e.billedCost.toFixed(2)}</td>
+                <td>{e.tokenCost.toFixed(2)}</td>
+                <td className={net >= 0 ? "positive" : "negative"}>{net.toFixed(2)}</td>
+                <td>{e.requests}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <style jsx>{`
@@ -77,6 +86,12 @@ export default function UsageBreakdown({ entries }: { entries: UsageEntry[] }) {
         }
         tbody tr:nth-child(odd) {
           background: #f9f9f9;
+        }
+        .positive {
+          color: #237804;
+        }
+        .negative {
+          color: #cf1322;
         }
       `}</style>
     </details>

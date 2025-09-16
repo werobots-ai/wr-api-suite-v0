@@ -145,7 +145,7 @@ function Navigation({
         {isSysAdmin && (
           <>
             <span>|</span>
-            <Link href="/admin/users">Admin</Link>
+            <Link href="/admin/users">WR Console</Link>
           </>
         )}
         {!user && !loading && (

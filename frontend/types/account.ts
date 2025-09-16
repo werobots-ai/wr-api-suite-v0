@@ -72,3 +72,35 @@ export type AccountPermissions = {
   manageKeys: boolean;
   manageUsers: boolean;
 };
+
+export type UsageTotals = {
+  totalTokenCost: number;
+  totalBilled: number;
+  totalRequests: number;
+  netRevenue: number;
+};
+
+export type TopUpTotals = {
+  totalTopUps: number;
+  lastTopUpAt: string | null;
+  count: number;
+};
+
+export type PlatformOrganization = {
+  organization: SafeOrganization;
+  usage: UsageTotals;
+  topUps: TopUpTotals;
+  activeMemberCount: number;
+  apiKeyCount: number;
+};
+
+export type PlatformOverview = {
+  organizations: PlatformOrganization[];
+  totals: UsageTotals & {
+    totalTopUps: number;
+    totalCredits: number;
+    organizationCount: number;
+    activeMemberCount: number;
+    apiKeyCount: number;
+  };
+};
