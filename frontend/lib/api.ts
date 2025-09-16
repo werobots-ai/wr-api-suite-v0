@@ -7,6 +7,10 @@ export async function fetchJSON<T>(
   if (typeof window !== "undefined") {
     const apiKey = localStorage.getItem("apiKey");
     if (apiKey) headers.set("x-api-key", apiKey);
+    const token = localStorage.getItem("wr_auth_token");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const orgId = localStorage.getItem("wr_active_org");
+    if (orgId) headers.set("x-org-id", orgId);
   }
   const res = await fetch(url, { ...opts, headers });
   if (!res.ok) throw new Error(await res.text());

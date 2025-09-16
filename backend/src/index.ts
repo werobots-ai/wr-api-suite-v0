@@ -6,6 +6,7 @@ import { apiKeyAuth } from "./utils/apiKeyAuth";
 import cors from "cors";
 import pricingRouter from "./routes/pricing";
 import adminRouter from "./routes/admin";
+import authRouter from "./routes/auth";
 
 import path from "path";
 
@@ -19,6 +20,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
 app.use("/data", express.static(path.join(__dirname, "../../data")));
 
 // account management
+app.use("/api/auth", authRouter);
 app.use("/api/account", accountRouter);
 app.use("/api/pricing", pricingRouter);
 app.use("/api/admin", adminRouter);

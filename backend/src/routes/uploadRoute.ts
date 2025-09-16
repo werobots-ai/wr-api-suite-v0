@@ -31,8 +31,8 @@ router.post("/", upload, async (req, res) => {
   }
 
   const billResults = async (results: any[]) => {
-    const { userId, keySetId, keyId } = res.locals as {
-      userId: string;
+    const { orgId, keySetId, keyId } = res.locals as {
+      orgId: string;
       keySetId: string;
       keyId: string;
     };
@@ -49,7 +49,15 @@ router.post("/", upload, async (req, res) => {
       0,
     );
     const billed = answered * pricing.questionAnswering;
-    await recordUsage(tokenCost, billed, "snippet_answering", userId, requests, keySetId, keyId);
+    await recordUsage({
+      orgId,
+      tokenCost,
+      billedCost: billed,
+      action: "snippet_answering",
+      requests,
+      keySetId,
+      keyId,
+    });
   };
 
   try {
