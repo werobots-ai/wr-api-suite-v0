@@ -1,6 +1,6 @@
 // components/DynamicWidthTextarea.tsx
 
-import React, { useState, useRef, useLayoutEffect } from "react";
+import React, { useState, useRef, useLayoutEffect, useCallback } from "react";
 
 interface DynamicWidthTextareaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -21,12 +21,12 @@ const DynamicWidthTextarea: React.FC<DynamicWidthTextareaProps> = ({
   const [value, setValue] = useState(String(defaultValue));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const adjustHeight = () => {
+  const adjustHeight = useCallback(() => {
     if (!props.rows && growVertically && textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  };
+  }, [growVertically, props.rows]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -40,7 +40,7 @@ const DynamicWidthTextarea: React.FC<DynamicWidthTextareaProps> = ({
 
   useLayoutEffect(() => {
     adjustHeight();
-  }, [value, growVertically]);
+  }, [adjustHeight, value]);
 
   return (
     <div className={`container${growVertically ? " vertical" : ""}`}>
