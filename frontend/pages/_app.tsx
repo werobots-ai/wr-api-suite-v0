@@ -11,16 +11,17 @@ export default function MyApp({ Component, pageProps }: AppProps) {
   const [snippets, setSnippets] = useState<Record<string, QAResult>>({});
 
   return (
-    <>
+    <div className="app-layout">
       <Head>
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <meta name="theme-color" content="#0F1D3B" />
+        <link rel="alternate icon" href="/favicon.svg" />
+        <meta name="theme-color" content="#0D1B36" />
+        <meta name="color-scheme" content="dark light" />
       </Head>
-      <div className="app-layout">
-        <ApiKeyModal />
-        <nav className="app-nav">
-          <div className="nav-links">
-            <Link href="/questions">Questions</Link>
+      <ApiKeyModal />
+      <nav className="app-nav">
+        <div className="nav-links">
+          <Link href="/questions">Questions</Link>
           {questionSet && (
             <>
               {" "}|{" "}
@@ -33,10 +34,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
             </>
           )}
           {questionSet && (
-            <span
-              className="nav-current-set"
-              title={questionSet.title}
-            >
+            <span className="nav-current-set" title={questionSet.title}>
               {`- ${questionSet.title}`}
             </span>
           )}
@@ -112,7 +110,6 @@ export default function MyApp({ Component, pageProps }: AppProps) {
           font-size: 0.9rem;
         }
       `}</style>
-      </div>
-    </>
+    </div>
   );
 }
