@@ -1,4 +1,5 @@
 import { QAResult, QuestionSet } from "@/types/Questions";
+import Head from "next/head";
 import { AppProps } from "next/app";
 import Link from "next/link";
 import { useState } from "react";
@@ -10,11 +11,16 @@ export default function MyApp({ Component, pageProps }: AppProps) {
   const [snippets, setSnippets] = useState<Record<string, QAResult>>({});
 
   return (
-    <div className="app-layout">
-      <ApiKeyModal />
-      <nav className="app-nav">
-        <div className="nav-links">
-          <Link href="/questions">Questions</Link>
+    <>
+      <Head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <meta name="theme-color" content="#0F1D3B" />
+      </Head>
+      <div className="app-layout">
+        <ApiKeyModal />
+        <nav className="app-nav">
+          <div className="nav-links">
+            <Link href="/questions">Questions</Link>
           {questionSet && (
             <>
               {" "}|{" "}
@@ -106,6 +112,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
           font-size: 0.9rem;
         }
       `}</style>
-    </div>
+      </div>
+    </>
   );
 }

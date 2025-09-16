@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">WR API Suite Favicon</title>
+  <desc id="desc">Rounded gradient square with a stylised WR monogram and connected API nodes.</desc>
+  <defs>
+    <linearGradient id="bg-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F1D3B" />
+      <stop offset="100%" stop-color="#1A6AD7" />
+    </linearGradient>
+    <linearGradient id="node-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9DEFFF" />
+      <stop offset="100%" stop-color="#4AC0FF" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bg-gradient)" />
+  <polyline
+    points="14 20 22.5 44 30.5 26 38.5 44 47 20"
+    fill="none"
+    stroke="#F5FAFF"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M33 44 V20 H46 Q55 20 55 29 Q55 38 46 38 H33 L51 56"
+    fill="none"
+    stroke="#8FE8FF"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.9"
+  />
+  <path
+    d="M44 24 L52 32 L44 40"
+    fill="none"
+    stroke="#4AC0FF"
+    stroke-width="3.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.9"
+  />
+  <circle cx="44" cy="24" r="3.4" fill="url(#node-gradient)" />
+  <circle cx="52" cy="32" r="3.4" fill="url(#node-gradient)" />
+  <circle cx="44" cy="40" r="3.4" fill="url(#node-gradient)" />
+  <circle cx="51" cy="56" r="3" fill="#E4FBFF" opacity="0.75" />
+</svg>
