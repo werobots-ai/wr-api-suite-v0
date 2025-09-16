@@ -4,6 +4,10 @@ config({
   path: `.env.${process.env.NODE_ENV || "local"}`,
 });
 
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("Missing OPENAI_API_KEY in environment variables");
+}
+
 const CACHE_SPEED_RATIO = process.env.CACHE_SPEED_RATIO
   ? parseFloat(process.env.CACHE_SPEED_RATIO)
   : undefined;
@@ -155,7 +159,7 @@ export async function openAIWithCache(
   }
 
   const start = Date.now();
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // Bit louder beep, so I catch it before I "Edua" it
   playMacSound(1);
