@@ -1,7 +1,7 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initStream } from '../src/utils/initStream';
+import { initStream } from "../src/shared/utils/initStream";
 
 test('initializes SSE and sends events', () => {
   const res: any = {

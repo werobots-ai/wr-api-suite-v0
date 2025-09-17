@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getCostReporter } from '../src/utils/costReporter';
+import { getCostReporter } from "../src/shared/utils/costReporter";
 
 test('tracks cost and requests', () => {
-  const events: any[] = [];
-  const reporter = getCostReporter((event, data) => {
+  const events: Array<{ event: string; data: unknown }> = [];
+  const reporter = getCostReporter((event: string, data: unknown) => {
     events.push({ event, data });
   });
 

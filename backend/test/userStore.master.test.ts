@@ -4,43 +4,54 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
+import type {
+  UserAccount,
+  UserOrganizationLink,
+} from "../src/shared/types/Identity";
+
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
 const identityPath = path.join(tempDir, "identity.json");
 process.env.IDENTITY_FILE_PATH = identityPath;
 
-let getIdentityStore: typeof import("../src/utils/userStore/persistence").getIdentityStore;
-let createOrganizationWithOwner: typeof import("../src/utils/userStore/organizations").createOrganizationWithOwner;
-let setOrganizationMasterStatus: typeof import("../src/utils/userStore/organizations").setOrganizationMasterStatus;
-let topUpOrganization: typeof import("../src/utils/userStore/organizations").topUpOrganization;
-let recordUsage: typeof import("../src/utils/userStore/organizations").recordUsage;
-let userHasMasterOrgAccess: typeof import("../src/utils/userStore/organizations").userHasMasterOrgAccess;
-let createOrUpdateOrgUser: typeof import("../src/utils/userStore/users").createOrUpdateOrgUser;
-let getUsersForOrganization: typeof import("../src/utils/userStore/users").getUsersForOrganization;
-let getUser: typeof import("../src/utils/userStore/users").getUser;
-let getUserByEmail: typeof import("../src/utils/userStore/users").getUserByEmail;
-let updateUserLastLogin: typeof import("../src/utils/userStore/users").updateUserLastLogin;
-let attachUserToOrganization: typeof import("../src/utils/userStore/users").attachUserToOrganization;
-let isInternalOrg: typeof import("../src/utils/userStore/config").isInternalOrg;
-let getInternalOrgIds: typeof import("../src/utils/userStore/config").getInternalOrgIds;
+let getIdentityStore: typeof import("../src/shared/utils/userStore/persistence").getIdentityStore;
+let createOrganizationWithOwner: typeof import("../src/shared/utils/userStore/organizations").createOrganizationWithOwner;
+let setOrganizationMasterStatus: typeof import("../src/shared/utils/userStore/organizations").setOrganizationMasterStatus;
+let topUpOrganization: typeof import("../src/shared/utils/userStore/organizations").topUpOrganization;
+let recordUsage: typeof import("../src/shared/utils/userStore/organizations").recordUsage;
+let userHasMasterOrgAccess: typeof import("../src/shared/utils/userStore/organizations").userHasMasterOrgAccess;
+let createOrUpdateOrgUser: typeof import("../src/shared/utils/userStore/users").createOrUpdateOrgUser;
+let getUsersForOrganization: typeof import("../src/shared/utils/userStore/users").getUsersForOrganization;
+let getUser: typeof import("../src/shared/utils/userStore/users").getUser;
+let getUserByEmail: typeof import("../src/shared/utils/userStore/users").getUserByEmail;
+let updateUserLastLogin: typeof import("../src/shared/utils/userStore/users").updateUserLastLogin;
+let attachUserToOrganization: typeof import("../src/shared/utils/userStore/users").attachUserToOrganization;
+let isInternalOrg: typeof import("../src/shared/utils/userStore/config").isInternalOrg;
+let getInternalOrgIds: typeof import("../src/shared/utils/userStore/config").getInternalOrgIds;
 
 test.before(async () => {
-  ({ getIdentityStore } = await import("../src/utils/userStore/persistence"));
+  ({ getIdentityStore } = await import(
+    "../src/shared/utils/userStore/persistence"
+  ));
   ({
     createOrganizationWithOwner,
     setOrganizationMasterStatus,
     topUpOrganization,
     recordUsage,
     userHasMasterOrgAccess,
-  } = await import("../src/utils/userStore/organizations"));
-  ({ createOrUpdateOrgUser } = await import("../src/utils/userStore/users"));
+  } = await import("../src/shared/utils/userStore/organizations"));
+  ({ createOrUpdateOrgUser } = await import(
+    "../src/shared/utils/userStore/users"
+  ));
   ({
     getUsersForOrganization,
     getUser,
     getUserByEmail,
     updateUserLastLogin,
     attachUserToOrganization,
-  } = await import("../src/utils/userStore/users"));
-  ({ isInternalOrg, getInternalOrgIds } = await import("../src/utils/userStore/config"));
+  } = await import("../src/shared/utils/userStore/users"));
+  ({ isInternalOrg, getInternalOrgIds } = await import(
+    "../src/shared/utils/userStore/config"
+  ));
 });
 
 test.beforeEach(() => {
@@ -123,10 +134,10 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
   });
   assert.equal(creation.isNewUser, true);
   assert.ok(creation.generatedPassword);
-  assert.equal(
-    creation.user.organizations.find((link) => link.orgId === organization.id)?.roles[0],
-    "MEMBER",
+  const creationLink = creation.user.organizations.find(
+    (link: UserOrganizationLink) => link.orgId === organization.id,
   );
+  assert.equal(creationLink?.roles[0], "MEMBER");
 
   const update = await createOrUpdateOrgUser({
     orgId: organization.id,
@@ -138,10 +149,10 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
   assert.equal(update.isNewUser, false);
   assert.equal(update.generatedPassword, undefined);
   assert.equal(update.user.name, "Member Admin");
-  assert.deepEqual(
-    update.user.organizations.find((link) => link.orgId === organization.id)?.roles,
-    ["ADMIN"],
+  const updateLink = update.user.organizations.find(
+    (link: UserOrganizationLink) => link.orgId === organization.id,
   );
+  assert.deepEqual(updateLink?.roles, ["ADMIN"]);
 
   const topped = await topUpOrganization(organization.id, 100);
   assert.equal(topped.credits, 100);
@@ -180,8 +191,10 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
   });
   const updatedMembers = await getUsersForOrganization(organization.id);
   const updatedRoles = updatedMembers
-    .find((member) => member.id === update.user.id)
-    ?.organizations.find((link) => link.orgId === organization.id)?.roles;
+    .find((member: UserAccount) => member.id === update.user.id)
+    ?.organizations.find(
+      (link: UserOrganizationLink) => link.orgId === organization.id,
+    )?.roles;
   assert.deepEqual(updatedRoles?.sort(), ["ADMIN", "OWNER"].sort());
 
   const internalIds = getInternalOrgIds();

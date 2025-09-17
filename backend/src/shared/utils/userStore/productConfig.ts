@@ -52,7 +52,7 @@ function coerceApiPlatformOptions(
   }>,
 ) {
   const options = input.options ?? {};
-  const environment =
+  const environment: "sandbox" | "production" =
     options.environment === "production" ? "production" : "sandbox";
   return {
     environment,
