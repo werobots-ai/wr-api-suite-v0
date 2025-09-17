@@ -31,6 +31,13 @@ interface AuthContextValue {
     ownerPassword: string;
     billingEmail?: string;
   }) => Promise<{ revealedApiKeys: string[] }>;
+  bootstrapMaster: (input: {
+    organizationName: string;
+    ownerEmail: string;
+    ownerName: string;
+    ownerPassword: string;
+    billingEmail?: string;
+  }) => Promise<{ revealedApiKeys: string[]; bootstrapCompletedAt: string | null }>;
   logout: () => void;
   refreshAccount: () => Promise<void>;
   setActiveOrg: (orgId: string) => Promise<void>;
@@ -205,6 +212,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refreshAccountInternal],
   );
 
+  const bootstrapMaster = useCallback(
+    async (input: {
+      organizationName: string;
+      ownerEmail: string;
+      ownerName: string;
+      ownerPassword: string;
+      billingEmail?: string;
+    }): Promise<{ revealedApiKeys: string[]; bootstrapCompletedAt: string | null }> => {
+      const res = await fetch(`${API_URL}/api/auth/dev/bootstrap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const data = await res.json();
+      setToken(data.token);
+      setStoredValue("wr_auth_token", data.token);
+      setActiveOrgId(data.organization.id);
+      setStoredValue("wr_active_org", data.organization.id);
+      setOrganizations([data.organization]);
+      await refreshAccountInternal(data.token, data.organization.id);
+      return {
+        revealedApiKeys: data.revealedApiKeys || [],
+        bootstrapCompletedAt: data.bootstrapCompletedAt ?? null,
+      };
+    },
+    [refreshAccountInternal],
+  );
+
   const setActiveOrg = useCallback(
     async (orgId: string) => {
       setActiveOrgId(orgId);
@@ -227,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       login,
       signup,
+      bootstrapMaster,
       logout,
       refreshAccount: triggerRefresh,
       setActiveOrg,
@@ -241,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       login,
       signup,
+      bootstrapMaster,
       logout,
       triggerRefresh,
       setActiveOrg,

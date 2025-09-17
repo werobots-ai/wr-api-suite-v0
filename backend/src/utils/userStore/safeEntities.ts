@@ -60,6 +60,7 @@ export function toSafeOrganization(
     name: org.name,
     slug: org.slug,
     credits: org.credits,
+    isMaster: org.isMaster,
     usage: org.usage.map((entry) => toSafeUsageEntry(entry, options)),
     keySets: org.keySets.map((set) => toSafeKeySet(set, options)),
     billingProfile: org.billingProfile,

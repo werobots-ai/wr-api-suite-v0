@@ -1,6 +1,11 @@
 import { v4 as uuid } from "uuid";
 
-import { Organization, UsageEntry, UserAccount } from "../../types/Identity";
+import {
+  GlobalRole,
+  Organization,
+  UsageEntry,
+  UserAccount,
+} from "../../types/Identity";
 import { createDefaultKeySet, revealStoredKey } from "./apiKeys";
 import { createPasswordHash } from "./passwords";
 import { loadIdentity, saveIdentity } from "./persistence";
@@ -20,13 +25,20 @@ export async function getOrganization(
   return store.organizations[orgId] || null;
 }
 
-export async function createOrganizationWithOwner(params: {
-  organizationName: string;
-  ownerEmail: string;
-  ownerName: string;
-  ownerPassword: string;
-  billingEmail?: string;
-}): Promise<{
+export async function createOrganizationWithOwner(
+  params: {
+    organizationName: string;
+    ownerEmail: string;
+    ownerName: string;
+    ownerPassword: string;
+    billingEmail?: string;
+  },
+  options: {
+    isMaster?: boolean;
+    ownerGlobalRoles?: GlobalRole[];
+    markBootstrapComplete?: boolean;
+  } = {},
+): Promise<{
   organization: Organization;
   owner: UserAccount;
   apiKeys: string[];
@@ -48,7 +60,7 @@ export async function createOrganizationWithOwner(params: {
     email: params.ownerEmail,
     name: params.ownerName,
     passwordHash: createPasswordHash(params.ownerPassword),
-    globalRoles: [],
+    globalRoles: options.ownerGlobalRoles ?? [],
     organizations: [{ orgId, roles: ["OWNER", "ADMIN", "BILLING"] }],
     createdAt: created,
     status: "active",
@@ -76,15 +88,47 @@ export async function createOrganizationWithOwner(params: {
     },
     createdAt: created,
     createdBy: ownerId,
+    isMaster: Boolean(options.isMaster),
   };
 
   store.users[ownerId] = owner;
   store.organizations[orgId] = organization;
+  if (options.markBootstrapComplete) {
+    store.metadata.bootstrapCompletedAt = now();
+  }
   await saveIdentity(store);
 
   const apiKeys = keySet.keys.map((key) => revealStoredKey(key));
 
   return { organization, owner, apiKeys };
+}
+
+export async function setOrganizationMasterStatus(
+  orgId: string,
+  isMaster: boolean,
+): Promise<Organization> {
+  const store = await loadIdentity();
+  const org = store.organizations[orgId];
+  if (!org) {
+    throw new Error("Organization not found");
+  }
+  org.isMaster = isMaster;
+  await saveIdentity(store);
+  return org;
+}
+
+export async function userHasMasterOrgAccess(userId: string): Promise<boolean> {
+  const store = await loadIdentity();
+  return Object.values(store.organizations).some((org) =>
+    org.isMaster
+      ? org.members.some(
+          (member) =>
+            member.userId === userId &&
+            member.status === "active" &&
+            member.roles.includes("OWNER"),
+        )
+      : false,
+  );
 }
 
 export async function topUpOrganization(

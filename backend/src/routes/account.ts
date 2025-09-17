@@ -5,7 +5,6 @@ import {
   createOrUpdateOrgUser,
   getOrganization,
   getUsersForOrganization,
-  isInternalOrg,
   removeKeySet,
   rotateApiKey,
   toSafeOrganization,
@@ -43,7 +42,8 @@ router.get("/", async (req, res) => {
     return;
   }
 
-  const canViewInternalCosts = isInternalOrg(orgId);
+  const canViewInternalCosts =
+    organization.isMaster || Boolean(res.locals.isSysAdmin);
 
   const permissions = {
     manageBilling: assertPermission(roles, ["OWNER", "BILLING"]),
@@ -54,7 +54,7 @@ router.get("/", async (req, res) => {
 
   res.json({
     organization: toSafeOrganization(organization, {
-      maskCosts: !canViewInternalCosts,
+      maskCosts: !organization.isMaster,
     }),
     user,
     permissions,
@@ -68,7 +68,7 @@ router.get("/organizations", async (_req, res) => {
       user.organizations.map(async (link) => {
         const org = await getOrganization(link.orgId);
         if (!org) return null;
-        const maskCosts = !isInternalOrg(org.id);
+        const maskCosts = !org.isMaster;
         return toSafeOrganization(org, { maskCosts });
       }),
     )
@@ -111,7 +111,12 @@ router.post("/keysets", express.json(), async (req, res) => {
   }
   const orgId = res.locals.activeOrgId as string;
   const actorId = res.locals.userId as string;
-  const maskCosts = !isInternalOrg(orgId);
+  const org = await getOrganization(orgId);
+  if (!org) {
+    res.status(404).json({ error: "Organization not found" });
+    return;
+  }
+  const maskCosts = !org.isMaster;
   const result = await addKeySet(orgId, actorId, name, description || "", { maskCosts });
   res.json(result);
 });
@@ -143,7 +148,12 @@ router.post("/keysets/:id/keys/:index/rotate", async (req, res) => {
     return;
   }
   try {
-    const maskCosts = !isInternalOrg(orgId);
+    const org = await getOrganization(orgId);
+    if (!org) {
+      res.status(404).json({ error: "Organization not found" });
+      return;
+    }
+    const maskCosts = !org.isMaster;
     const { apiKey, safeKey } = await rotateApiKey(orgId, id, parsed, actorId, {
       maskCosts,
     });

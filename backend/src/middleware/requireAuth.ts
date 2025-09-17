@@ -38,7 +38,9 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   }
 
   const membership = org.members.find((m) => m.userId === user.id && m.status === "active");
-  const isSysAdmin = user.globalRoles.includes("SYSADMIN");
+  const isSysAdmin = user.globalRoles.some((role) =>
+    role === "SYSADMIN" || role === "MASTER_ADMIN",
+  );
   if (!membership && !isSysAdmin) {
     res.status(403).json({ error: "User does not belong to this organization" });
     return;

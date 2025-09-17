@@ -1,6 +1,6 @@
 export type OrgRole = "OWNER" | "ADMIN" | "BILLING" | "MEMBER";
 
-export type GlobalRole = "SYSADMIN";
+export type GlobalRole = "SYSADMIN" | "MASTER_ADMIN";
 
 export interface UsageEntry {
   timestamp: string;
@@ -64,6 +64,7 @@ export interface Organization {
   billingProfile: BillingProfile;
   createdAt: string;
   createdBy: string;
+  isMaster: boolean;
 }
 
 export interface UserOrganizationLink {
@@ -91,8 +92,13 @@ export interface AuditLogEntry {
   details?: Record<string, unknown>;
 }
 
+export interface IdentityMetadata {
+  bootstrapCompletedAt: string | null;
+}
+
 export interface IdentityStoreData {
   users: Record<string, UserAccount>;
   organizations: Record<string, Organization>;
   auditLog: AuditLogEntry[];
+  metadata: IdentityMetadata;
 }

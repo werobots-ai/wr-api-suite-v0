@@ -131,7 +131,9 @@ function Navigation({
     logout,
     loading,
   } = useAuth();
-  const isSysAdmin = Boolean(user?.globalRoles.includes("SYSADMIN"));
+  const hasPlatformAccess = Boolean(
+    user?.globalRoles.some((role) => role === "SYSADMIN" || role === "MASTER_ADMIN"),
+  );
   return (
     <nav className="app-nav">
       <div className="nav-links">
@@ -155,7 +157,7 @@ function Navigation({
         {user && (permissions?.manageBilling || permissions?.manageKeys) && (
           <Link href="/account/billing">Account &amp; Billing</Link>
         )}
-        {isSysAdmin && (
+        {hasPlatformAccess && (
           <>
             <span>|</span>
             <Link href="/admin/users">WR Console</Link>

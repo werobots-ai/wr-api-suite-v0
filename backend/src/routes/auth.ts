@@ -1,9 +1,9 @@
 import express, { Router } from "express";
 import {
   createOrganizationWithOwner,
+  getIdentityStore,
   getOrganization,
   getUserByEmail,
-  isInternalOrg,
   toSafeOrganization,
   toSafeUser,
   updateUserLastLogin,
@@ -13,10 +13,26 @@ import { issueDevToken } from "../utils/devAuth";
 
 const router = Router();
 
+router.get("/dev/status", async (_req, res) => {
+  const store = await getIdentityStore();
+  const needsBootstrap = Object.keys(store.users).length === 0;
+  res.json({
+    needsBootstrap,
+    bootstrapCompletedAt: store.metadata.bootstrapCompletedAt,
+    organizationCount: Object.keys(store.organizations).length,
+  });
+});
+
 router.post("/dev/signup", express.json(), async (req, res) => {
   const { organizationName, ownerEmail, ownerName, ownerPassword, billingEmail } = req.body;
   if (!organizationName || !ownerEmail || !ownerName || !ownerPassword) {
     res.status(400).json({ error: "Missing required fields" });
+    return;
+  }
+
+  const store = await getIdentityStore();
+  if (Object.keys(store.users).length === 0) {
+    res.status(409).json({ error: "Instance requires master bootstrap" });
     return;
   }
 
@@ -34,9 +50,59 @@ router.post("/dev/signup", express.json(), async (req, res) => {
       token,
       user: toSafeUser(owner),
       organization: toSafeOrganization(organization, {
-        maskCosts: !isInternalOrg(organization.id),
+        maskCosts: !organization.isMaster,
       }),
       revealedApiKeys: apiKeys,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(400).json({ error: message });
+  }
+});
+
+router.post("/dev/bootstrap", express.json(), async (req, res) => {
+  const {
+    organizationName,
+    ownerEmail,
+    ownerName,
+    ownerPassword,
+    billingEmail,
+  } = req.body;
+  if (!organizationName || !ownerEmail || !ownerName || !ownerPassword) {
+    res.status(400).json({ error: "Missing required fields" });
+    return;
+  }
+
+  const store = await getIdentityStore();
+  if (Object.keys(store.users).length > 0) {
+    res.status(409).json({ error: "Bootstrap already completed" });
+    return;
+  }
+
+  try {
+    const { organization, owner, apiKeys } = await createOrganizationWithOwner(
+      {
+        organizationName,
+        ownerEmail,
+        ownerName,
+        ownerPassword,
+        billingEmail,
+      },
+      {
+        isMaster: true,
+        ownerGlobalRoles: ["MASTER_ADMIN"],
+        markBootstrapComplete: true,
+      },
+    );
+    const token = issueDevToken(owner.id);
+    await updateUserLastLogin(owner.id);
+    const updatedStore = await getIdentityStore();
+    res.json({
+      token,
+      user: toSafeUser(owner),
+      organization: toSafeOrganization(organization, { maskCosts: false }),
+      revealedApiKeys: apiKeys,
+      bootstrapCompletedAt: updatedStore.metadata.bootstrapCompletedAt,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -64,7 +130,7 @@ router.post("/dev/login", express.json(), async (req, res) => {
       user.organizations.map(async (link) => {
         const org = await getOrganization(link.orgId);
         if (!org) return null;
-        const maskCosts = !isInternalOrg(org.id);
+        const maskCosts = !org.isMaster;
         return toSafeOrganization(org, { maskCosts });
       }),
     )

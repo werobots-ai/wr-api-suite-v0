@@ -8,6 +8,8 @@ export {
   createOrganizationWithOwner,
   topUpOrganization,
   recordUsage,
+  setOrganizationMasterStatus,
+  userHasMasterOrgAccess,
 } from "./organizations";
 export {
   getUsersForOrganization,
