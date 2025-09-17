@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ConfirmModal from "@/components/ConfirmModal";
 import KeyRevealModal from "@/components/KeyRevealModal";
 import UsageBreakdown from "@/components/UsageBreakdown";
 import { fetchJSON } from "@/lib/api";
@@ -89,6 +90,11 @@ export default function BillingPage() {
     products: buildInitialProducts(),
   }));
   const [revealModal, setRevealModal] = useState<KeyReveal | null>(null);
+  const [pendingRotation, setPendingRotation] = useState<{
+    setId: string;
+    setName: string;
+    index: number;
+  } | null>(null);
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [memberForm, setMemberForm] = useState({
     email: "",
@@ -221,7 +227,7 @@ export default function BillingPage() {
     await refreshAccount();
   };
 
-  const handleRotate = async (setId: string, setName: string, index: number) => {
+  const rotateKey = async (setId: string, setName: string, index: number) => {
     if (!canManageKeys) return;
     const result = await fetchJSON<{
       apiKey: string;
@@ -235,6 +241,25 @@ export default function BillingPage() {
       title: "API key rotated",
     });
     await refreshAccount();
+  };
+
+  const requestRotate = (setId: string, setName: string, index: number) => {
+    if (!canManageKeys) return;
+    setPendingRotation({ setId, setName, index });
+  };
+
+  const confirmRotate = async () => {
+    if (!pendingRotation) return;
+    const { setId, setName, index } = pendingRotation;
+    try {
+      await rotateKey(setId, setName, index);
+    } finally {
+      setPendingRotation(null);
+    }
+  };
+
+  const cancelRotate = () => {
+    setPendingRotation(null);
   };
 
   const handleAddKeySet = async () => {
@@ -434,6 +459,25 @@ export default function BillingPage() {
 
   return (
     <div className="container">
+      <ConfirmModal
+        isOpen={Boolean(pendingRotation)}
+        title="Rotate API key?"
+        confirmLabel="Rotate key"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={confirmRotate}
+        onCancel={cancelRotate}
+      >
+        {pendingRotation && (
+          <>
+            <p>
+              Rotating the key for <strong>{pendingRotation.setName}</strong> will immediately expire the
+              existing secret.
+            </p>
+            <p>This action cannot be undone. Update all integrations with the new value right away.</p>
+          </>
+        )}
+      </ConfirmModal>
       <KeyRevealModal
         isOpen={Boolean(revealModal)}
         keys={revealModal?.keys ?? []}
@@ -582,7 +626,7 @@ export default function BillingPage() {
                         </div>
                         <div className="key-actions">
                           {canManageKeys && (
-                            <button onClick={() => handleRotate(set.id, set.name, idx)}>
+                            <button onClick={() => requestRotate(set.id, set.name, idx)}>
                               Rotate
                             </button>
                           )}
