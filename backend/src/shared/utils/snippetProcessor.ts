@@ -10,6 +10,7 @@ interface RecordRow {
 }
 
 export async function processSnippets(
+  orgId: string,
   rows: RecordRow[] | null,
   snippets: { id: string; name: string; content: string }[] | null,
   // either fullSnippet or rows must be provided
@@ -134,7 +135,7 @@ export async function processSnippets(
           errors: [],
         };
 
-        await saveQaResult(result);
+        await saveQaResult(orgId, result);
 
         return result;
       }
@@ -201,7 +202,7 @@ export async function processSnippets(
       errors: [],
     };
 
-    await saveQaResult(result);
+    await saveQaResult(orgId, result);
 
     return result;
   });

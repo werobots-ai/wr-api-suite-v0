@@ -4,26 +4,27 @@ import {
   loadQuestionSet,
   saveQuestionSet,
   softDeleteQuestionSet,
-} from "../utils/questionStore";
-import { initStream } from "../utils/initStream";
-import { questionsReasoner } from "../llmCalls/questionsReasoner";
-import { questionGuidanceGenerator } from "../llmCalls/questionGuidanceGenerator";
+} from "../../../shared/utils/questionStore";
+import { initStream } from "../../../shared/utils/initStream";
+import { questionsReasoner } from "../../../shared/llmCalls/questionsReasoner";
+import { questionGuidanceGenerator } from "../../../shared/llmCalls/questionGuidanceGenerator";
 import {
   RAW_QUESTION_TYPES_MAP,
   RawQuestionType,
-} from "../config/questionTypes";
-import { questionExecutionPlanner } from "../llmCalls/questionExecutionPlanner";
+} from "../../../shared/config/questionTypes";
+import { questionExecutionPlanner } from "../../../shared/llmCalls/questionExecutionPlanner";
 import { v4 as uuid } from "uuid";
 import { marked } from "marked";
-import { QAResult } from "../types/Questions";
-import { recordUsage } from "../utils/userStore";
-import pricing from "../config/pricing.json";
+import { QAResult } from "../../../shared/types/Questions";
+import { recordUsage } from "../../../shared/utils/userStore";
+import pricing from "../../../shared/config/pricing.json";
 
 const router = Router();
 
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
-  const question = await loadQuestionSet(id);
+  const { orgId } = res.locals as { orgId: string };
+  const question = await loadQuestionSet(orgId, id);
   if (!question) {
     res.status(404).json({ error: "Question not found" });
     return;
@@ -80,13 +81,24 @@ router.get("/:id", async (req, res) => {
 });
 
 router.get("/", async (_req, res) => {
-  const questions = await listQuestionSets();
+  const { orgId } = res.locals as { orgId: string };
+  const questions = await listQuestionSets(orgId);
   res.json(questions);
 });
 
 router.post("/", express.json(), async (req, res) => {
   const logger = initStream(res);
   const { sendEvent, sendError, sendLog } = logger;
+
+  const permissions = (res.locals.documentPermissions as
+    | Record<string, boolean>
+    | undefined) ?? { createQuestionSet: false };
+  if (!permissions.createQuestionSet) {
+    res.status(403);
+    sendError(new Error("API key is not permitted to create question sets."));
+    res.end();
+    return;
+  }
 
   try {
     const { changeRequest } = req.body;
@@ -233,7 +245,13 @@ router.post("/", express.json(), async (req, res) => {
       })
     );
 
-    await saveQuestionSet({
+    const { orgId, keySetId, keyId } = res.locals as {
+      orgId: string;
+      keySetId?: string;
+      keyId?: string;
+    };
+
+    await saveQuestionSet(orgId, {
       originalUserInput: changeRequest,
       questions: finalizedFields,
       executionPlan,
@@ -247,11 +265,6 @@ router.post("/", express.json(), async (req, res) => {
 
     sendEvent("loadQuestionSet", { questionSetId: id });
 
-    const { orgId, keySetId, keyId } = res.locals as {
-      orgId: string;
-      keySetId: string;
-      keyId: string;
-    };
     const questionCount = finalizedFields.length;
     const billed = questionCount * pricing.questionGeneration;
     const requests = questionCount + 3; // reasoner + guidance + plan + per question finalizer
@@ -277,8 +290,16 @@ router.post("/", express.json(), async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
+  const { orgId } = res.locals as { orgId: string };
+  const permissions = (res.locals.documentPermissions as
+    | Record<string, boolean>
+    | undefined) ?? { createQuestionSet: false };
+  if (!permissions.createQuestionSet) {
+    res.status(403).json({ error: "API key is not permitted to manage question sets" });
+    return;
+  }
   try {
-    await softDeleteQuestionSet(id);
+    await softDeleteQuestionSet(orgId, id);
     // Successful soft delete: no content
     res.sendStatus(204);
   } catch (err: any) {

@@ -27,6 +27,7 @@ export type SafeKeySet = {
   keys: SafeApiKey[];
   createdAt: string;
   createdBy: string;
+  products: ProductKeyConfig[];
 };
 
 export type BillingProfile = {
@@ -57,6 +58,8 @@ export type SafeOrganization = {
   createdAt: string;
   createdBy: string;
 };
+
+export type ProductCatalogResponse = ProductDefinition[];
 
 export type SafeUser = {
   id: string;
@@ -107,3 +110,4 @@ export type PlatformOverview = {
     apiKeyCount: number;
   };
 };
+import { ProductDefinition, ProductKeyConfig } from "./products";

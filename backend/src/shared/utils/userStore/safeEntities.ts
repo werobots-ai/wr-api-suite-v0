@@ -5,6 +5,7 @@ import {
   UsageEntry,
   UserAccount,
 } from "../../types/Identity";
+import { cloneProductConfig } from "../../types/Products";
 import { maskFromLastFour } from "./helpers";
 
 export interface SafeEntityOptions {
@@ -48,6 +49,7 @@ export function toSafeKeySet(
     createdAt: set.createdAt,
     createdBy: set.createdBy,
     keys: set.keys.map((key) => toSafeKey(key, options)),
+    products: set.products.map((product) => cloneProductConfig(product)),
   };
 }
 

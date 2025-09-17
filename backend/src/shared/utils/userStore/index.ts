@@ -26,6 +26,7 @@ export {
   rotateApiKey,
   findOrgByApiKey,
 } from "./keyManagement";
+export { normalizeProductConfigs, getProductCatalog } from "./productConfig";
 export {
   toSafeKey,
   toSafeKeySet,

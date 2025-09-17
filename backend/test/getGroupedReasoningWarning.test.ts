@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getGroupedReasoningWarning } from '../src/utils/getGroupedReasoningWarning';
-import { Question } from '../src/types/Questions';
+import { getGroupedReasoningWarning } from "../src/shared/utils/getGroupedReasoningWarning";
+import { Question } from "../src/shared/types/Questions";
 
 const makeQuestion = (id: number, text: string): Question => ({
   questionId: id,

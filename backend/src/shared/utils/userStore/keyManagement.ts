@@ -5,6 +5,7 @@ import {
   Organization,
   StoredApiKey,
 } from "../../types/Identity";
+import { ProductKeyConfig } from "../../types/Products";
 import { createStoredKeyFromPlain, generatePlainApiKey } from "./apiKeys";
 import { hashApiKey } from "./crypto";
 import { loadIdentity, saveIdentity } from "./persistence";
@@ -14,33 +15,42 @@ import {
   toSafeKeySet,
 } from "./safeEntities";
 import { now } from "./time";
+import { normalizeProductConfigs } from "./productConfig";
 
 export async function addKeySet(
-  orgId: string,
-  actorId: string,
-  name: string,
-  description: string,
+  params: {
+    orgId: string;
+    actorId: string;
+    name: string;
+    description: string;
+    products: ProductKeyConfig[];
+  },
   options: SafeEntityOptions = {},
 ): Promise<{
   keySet: ReturnType<typeof toSafeKeySet>;
   revealedKeys: string[];
 }> {
   const store = await loadIdentity();
-  const org = store.organizations[orgId];
+  const org = store.organizations[params.orgId];
   if (!org) throw new Error("Organization not found");
   const createdAt = now();
   const keyAPlain = generatePlainApiKey();
   const keyBPlain = generatePlainApiKey();
+  const products = normalizeProductConfigs(params.products, {
+    ensureDocument: true,
+  });
+
   const keySet: KeySet = {
     id: uuid(),
-    name,
-    description,
+    name: params.name,
+    description: params.description,
     keys: [
-      createStoredKeyFromPlain(keyAPlain, actorId),
-      createStoredKeyFromPlain(keyBPlain, actorId),
+      createStoredKeyFromPlain(keyAPlain, params.actorId),
+      createStoredKeyFromPlain(keyBPlain, params.actorId),
     ],
     createdAt,
-    createdBy: actorId,
+    createdBy: params.actorId,
+    products,
   };
   org.keySets.push(keySet);
   await saveIdentity(store);
