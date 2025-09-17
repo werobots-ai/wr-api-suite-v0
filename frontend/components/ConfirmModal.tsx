@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useId, useState } from "react";
+import { ReactNode, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 
 interface ConfirmModalProps {
@@ -22,13 +22,7 @@ export default function ConfirmModal({
   onCancel,
   destructive = false,
 }: ConfirmModalProps) {
-  const [mounted, setMounted] = useState(false);
   const titleId = useId();
-
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -58,7 +52,7 @@ export default function ConfirmModal({
     };
   }, [isOpen, onCancel, onConfirm]);
 
-  if (!mounted || !isOpen) {
+  if (!isOpen || typeof document === "undefined") {
     return null;
   }
 
