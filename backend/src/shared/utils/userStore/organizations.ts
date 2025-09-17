@@ -6,12 +6,14 @@ import {
   UsageEntry,
   UserAccount,
 } from "../../types/Identity";
+import { cloneProductConfig } from "../../types/Products";
 import { createDefaultKeySet, revealStoredKey } from "./apiKeys";
 import { createPasswordHash } from "./passwords";
 import { loadIdentity, saveIdentity } from "./persistence";
 import { slugify } from "./helpers";
 import { now } from "./time";
 import { getUserByEmail } from "./users";
+import { normalizeProductConfigs } from "./productConfig";
 
 export async function getOrganizations(): Promise<Organization[]> {
   const store = await loadIdentity();
@@ -54,6 +56,12 @@ export async function createOrganizationWithOwner(
   const created = now();
 
   const keySet = createDefaultKeySet(ownerId);
+  const defaultProductAccess = normalizeProductConfigs(null, {
+    ensureDocument: true,
+  });
+  const ownerProductAccess = defaultProductAccess.map((config) =>
+    cloneProductConfig(config),
+  );
 
   const owner: UserAccount = {
     id: ownerId,
@@ -61,7 +69,15 @@ export async function createOrganizationWithOwner(
     name: params.ownerName,
     passwordHash: createPasswordHash(params.ownerPassword),
     globalRoles: options.ownerGlobalRoles ?? [],
-    organizations: [{ orgId, roles: ["OWNER", "ADMIN", "BILLING"] }],
+    organizations: [
+      {
+        orgId,
+        roles: ["OWNER", "ADMIN", "BILLING"],
+        productAccess: ownerProductAccess.map((config) =>
+          cloneProductConfig(config),
+        ),
+      },
+    ],
     createdAt: created,
     status: "active",
   };
@@ -80,6 +96,9 @@ export async function createOrganizationWithOwner(
         invitedAt: created,
         joinedAt: created,
         status: "active",
+        productAccess: ownerProductAccess.map((config) =>
+          cloneProductConfig(config),
+        ),
       },
     ],
     billingProfile: {

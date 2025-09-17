@@ -35,11 +35,14 @@ router.post("/", upload, async (req, res) => {
   const { orgId } = res.locals as { orgId: string };
 
   const billResults = async (results: any[]) => {
-    const { orgId, keySetId, keyId } = res.locals as {
+    const { orgId, keySetId, keyId, userId, usageSource } = res.locals as {
       orgId: string;
-      keySetId: string;
-      keyId: string;
+      keySetId?: string;
+      keyId?: string;
+      userId?: string;
+      usageSource?: string;
     };
+    const source = usageSource === "ui" ? "ui" : "api";
     const tokenCost = results.reduce(
       (sum, r) => sum + (r.metrics?.cost || 0),
       0,
@@ -52,15 +55,21 @@ router.post("/", upload, async (req, res) => {
       (sum, r) => sum + Object.keys(r.answers || {}).length,
       0,
     );
-    const billed = answered * pricing.questionAnswering;
+    const multiplier = source === "ui" ? 2 : 1;
+    const billed = answered * pricing.questionAnswering * multiplier;
     await recordUsage({
       orgId,
       tokenCost,
       billedCost: billed,
-      action: "snippet_answering",
+      action:
+        source === "ui" ? "ui_snippet_answering" : "snippet_answering",
       requests,
-      keySetId,
-      keyId,
+      keySetId: source === "api" ? keySetId : undefined,
+      keyId: source === "api" ? keyId : undefined,
+      metadata:
+        source === "ui"
+          ? { source, userId }
+          : { source, keySetId, keyId },
     });
   };
 

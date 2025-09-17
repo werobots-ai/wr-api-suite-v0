@@ -14,6 +14,12 @@ import {
   normalizeProductConfigs,
 } from "../utils/userStore";
 import { OrgRole } from "../types/Identity";
+import {
+  DOCUMENT_ANALYSIS_PRODUCT_ID,
+  isDocumentAnalysisConfig,
+  ProductKeyConfig,
+  cloneProductConfig,
+} from "../types/Products";
 
 const router = Router();
 
@@ -38,6 +44,9 @@ router.get("/", async (req, res) => {
   const orgId = res.locals.activeOrgId as string;
   const user = res.locals.user;
   const roles = getEffectiveRoles(res);
+  const membership = res.locals.membership as
+    | { productAccess?: ProductKeyConfig[] }
+    | undefined;
   const organization = await getOrganization(orgId);
   if (!organization) {
     res.status(404).json({ error: "Organization not found" });
@@ -46,6 +55,23 @@ router.get("/", async (req, res) => {
 
   const canViewInternalCosts =
     organization.isMaster || Boolean(res.locals.isSysAdmin);
+
+  const baseProductAccess =
+    membership?.productAccess ??
+    (res.locals.isSysAdmin
+      ? normalizeProductConfigs(null, { ensureDocument: true })
+      : []);
+  const productAccess = baseProductAccess.map((config) =>
+    cloneProductConfig(config),
+  );
+  const documentEntry =
+    productAccess.find(
+      (config) => config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+    ) ?? null;
+  const documentAccess =
+    documentEntry && isDocumentAnalysisConfig(documentEntry)
+      ? documentEntry
+      : null;
 
   const permissions = {
     manageBilling: assertPermission(roles, ["OWNER", "BILLING"]),
@@ -61,6 +87,8 @@ router.get("/", async (req, res) => {
     user,
     permissions,
     productCatalog: getProductCatalog(),
+    productAccess,
+    documentAccess,
   });
 });
 
@@ -196,9 +224,13 @@ router.get("/users", async (req, res) => {
   const users = await getUsersForOrganization(orgId);
   const mapped = users.map((user) => {
     const membership = org.members.find((m) => m.userId === user.id);
+    const productAccess = membership
+      ? membership.productAccess.map((config) => cloneProductConfig(config))
+      : [];
     return {
       ...toSafeUser(user),
       roles: membership?.roles ?? [],
+      productAccess,
     };
   });
 
@@ -212,11 +244,18 @@ router.post("/users", express.json(), async (req, res) => {
     return;
   }
 
-  const { email, name, roles: requestedRoles, password } = req.body as {
+  const {
+    email,
+    name,
+    roles: requestedRoles,
+    password,
+    productAccess: requestedProducts,
+  } = req.body as {
     email: string;
     name: string;
     roles: OrgRole[];
     password?: string;
+    productAccess?: unknown;
   };
 
   if (!email || !name || !requestedRoles?.length) {
@@ -232,18 +271,32 @@ router.post("/users", express.json(), async (req, res) => {
   }
 
   const orgId = res.locals.activeOrgId as string;
+  const productAccessInput = Array.isArray(requestedProducts)
+    ? requestedProducts
+    : undefined;
+  const normalizedProductAccess =
+    productAccessInput !== undefined
+      ? normalizeProductConfigs(productAccessInput, { ensureDocument: true })
+      : undefined;
   const { user, generatedPassword, isNewUser } = await createOrUpdateOrgUser({
     orgId,
     email,
     name,
     roles: requestedRoles,
     password,
+    productAccess: normalizedProductAccess,
   });
+
+  const link = user.organizations.find((o) => o.orgId === orgId);
+  const safeProductAccess = link
+    ? link.productAccess.map((config) => cloneProductConfig(config))
+    : [];
 
   res.json({
     user: {
       ...toSafeUser(user),
       roles: requestedRoles,
+      productAccess: safeProductAccess,
     },
     generatedPassword,
     isNewUser,

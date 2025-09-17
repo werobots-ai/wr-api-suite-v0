@@ -7,6 +7,25 @@ import { createBootstrapIdentity } from "./bootstrap";
 import { normalizeProductConfigs } from "./productConfig";
 
 function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
+  const users = Object.fromEntries(
+    Object.entries(store.users || {}).map(([id, user]) => {
+      const organizations = (user.organizations || []).map((link) => ({
+        ...link,
+        roles: Array.isArray(link.roles) ? link.roles : [],
+        productAccess: normalizeProductConfigs(link.productAccess, {
+          ensureDocument: true,
+        }),
+      }));
+      return [
+        id,
+        {
+          ...user,
+          organizations,
+        },
+      ];
+    }),
+  );
+
   const organizations = Object.fromEntries(
     Object.entries(store.organizations || {}).map(([id, org]) => {
       const keySets = (org.keySets || []).map((set) => ({
@@ -15,11 +34,19 @@ function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
           ensureDocument: true,
         }),
       }));
+      const members = (org.members || []).map((member) => ({
+        ...member,
+        roles: Array.isArray(member.roles) ? member.roles : [],
+        productAccess: normalizeProductConfigs(member.productAccess, {
+          ensureDocument: true,
+        }),
+      }));
       return [
         id,
         {
           ...org,
           keySets,
+          members,
           isMaster: Boolean(org.isMaster),
         },
       ];
@@ -27,7 +54,7 @@ function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
   );
 
   return {
-    users: store.users || {},
+    users,
     organizations,
     auditLog: store.auditLog || [],
     metadata: {

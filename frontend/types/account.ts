@@ -43,6 +43,7 @@ export type OrgMember = {
   invitedAt: string;
   joinedAt: string;
   status: "active" | "invited" | "suspended";
+  productAccess: ProductKeyConfig[];
 };
 
 export type SafeOrganization = {
@@ -61,12 +62,16 @@ export type SafeOrganization = {
 
 export type ProductCatalogResponse = ProductDefinition[];
 
+export type AccountProductAccess = ProductKeyConfig[];
+
+export type AccountDocumentAccess = DocumentAnalysisProductConfig | null;
+
 export type SafeUser = {
   id: string;
   email: string;
   name: string;
   globalRoles: string[];
-  organizations: { orgId: string; roles: OrgRole[] }[];
+  organizations: { orgId: string; roles: OrgRole[]; productAccess: ProductKeyConfig[] }[];
   createdAt: string;
   lastLoginAt?: string;
   status: "active" | "disabled";
@@ -110,4 +115,8 @@ export type PlatformOverview = {
     apiKeyCount: number;
   };
 };
-import { ProductDefinition, ProductKeyConfig } from "./products";
+import {
+  DocumentAnalysisProductConfig,
+  ProductDefinition,
+  ProductKeyConfig,
+} from "./products";

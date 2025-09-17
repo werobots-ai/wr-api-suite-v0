@@ -8,6 +8,7 @@ import type {
   UserAccount,
   UserOrganizationLink,
 } from "../src/shared/types/Identity";
+import { DOCUMENT_ANALYSIS_PRODUCT_ID } from "../src/shared/types/Products";
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
 const identityPath = path.join(tempDir, "identity.json");
@@ -119,12 +120,21 @@ test("master status can be toggled", { concurrency: false }, async () => {
 });
 
 test("user lifecycle and usage recording", { concurrency: false }, async () => {
-  const { organization } = await createOrganizationWithOwner({
+  const { organization, owner } = await createOrganizationWithOwner({
     organizationName: "Lifecycle Org",
     ownerEmail: "lifecycle-owner@example.com",
     ownerName: "Lifecycle Owner",
     ownerPassword: "ownerpass",
   });
+
+  const ownerLink = owner.organizations.find(
+    (link) => link.orgId === organization.id,
+  );
+  assert.ok(
+    ownerLink?.productAccess.some(
+      (config) => config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+    ),
+  );
 
   const creation = await createOrUpdateOrgUser({
     orgId: organization.id,
@@ -138,6 +148,11 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
     (link: UserOrganizationLink) => link.orgId === organization.id,
   );
   assert.equal(creationLink?.roles[0], "MEMBER");
+  assert.ok(
+    creationLink?.productAccess.some(
+      (config) => config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+    ),
+  );
 
   const update = await createOrUpdateOrgUser({
     orgId: organization.id,
@@ -153,6 +168,11 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
     (link: UserOrganizationLink) => link.orgId === organization.id,
   );
   assert.deepEqual(updateLink?.roles, ["ADMIN"]);
+  assert.ok(
+    updateLink?.productAccess.some(
+      (config) => config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+    ),
+  );
 
   const topped = await topUpOrganization(organization.id, 100);
   assert.equal(topped.credits, 100);
@@ -196,6 +216,14 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
       (link: UserOrganizationLink) => link.orgId === organization.id,
     )?.roles;
   assert.deepEqual(updatedRoles?.sort(), ["ADMIN", "OWNER"].sort());
+  const updatedProductAccess = updatedMembers
+    .find((member: UserAccount) => member.id === update.user.id)
+    ?.organizations.find((link) => link.orgId === organization.id)?.productAccess;
+  assert.ok(
+    updatedProductAccess?.some(
+      (config) => config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+    ),
+  );
 
   const internalIds = getInternalOrgIds();
   assert.equal(internalIds.includes(organization.id), false);

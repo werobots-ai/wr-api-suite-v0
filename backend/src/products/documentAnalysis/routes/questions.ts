@@ -245,11 +245,14 @@ router.post("/", express.json(), async (req, res) => {
       })
     );
 
-    const { orgId, keySetId, keyId } = res.locals as {
+    const { orgId, keySetId, keyId, userId, usageSource } = res.locals as {
       orgId: string;
       keySetId?: string;
       keyId?: string;
+      userId?: string;
+      usageSource?: string;
     };
+    const source = usageSource === "ui" ? "ui" : "api";
 
     await saveQuestionSet(orgId, {
       originalUserInput: changeRequest,
@@ -266,16 +269,21 @@ router.post("/", express.json(), async (req, res) => {
     sendEvent("loadQuestionSet", { questionSetId: id });
 
     const questionCount = finalizedFields.length;
-    const billed = questionCount * pricing.questionGeneration;
+    const multiplier = source === "ui" ? 2 : 1;
+    const billed = questionCount * pricing.questionGeneration * multiplier;
     const requests = questionCount + 3; // reasoner + guidance + plan + per question finalizer
     await recordUsage({
       orgId,
       tokenCost: overallCost,
       billedCost: billed,
-      action: "question_generation",
+      action: source === "ui" ? "ui_question_generation" : "question_generation",
       requests,
       keySetId,
       keyId,
+      metadata:
+        source === "ui"
+          ? { source, userId }
+          : { source, keySetId, keyId },
     });
 
     sendLog(`DONE.`);
