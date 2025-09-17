@@ -2,15 +2,18 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { parseXlsx } from "../utils/xlsxParser";
-import { processSnippets } from "../utils/snippetProcessor";
-import { initStream } from "../utils/initStream";
-import { loadQuestionSet } from "../utils/questionStore";
-import { recordUsage } from "../utils/userStore";
-import pricing from "../config/pricing.json";
+import { parseXlsx } from "../../../shared/utils/xlsxParser";
+import { processSnippets } from "../../../shared/utils/snippetProcessor";
+import { initStream } from "../../../shared/utils/initStream";
+import { loadQuestionSet } from "../../../shared/utils/questionStore";
+import { recordUsage } from "../../../shared/utils/userStore";
+import pricing from "../../../shared/config/pricing.json";
+
+const BACKEND_ROOT = path.resolve(__dirname, "../../../..");
+const PROJECT_ROOT = path.resolve(BACKEND_ROOT, "..");
 
 const router = Router();
-const uploadDir = path.join(__dirname, "../../../uploads");
+const uploadDir = path.join(PROJECT_ROOT, "uploads");
 // const dataDir = path.join(__dirname, "../../../data/transcripts");
 
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -29,6 +32,7 @@ router.post("/", upload, async (req, res) => {
     res.end();
     return;
   }
+  const { orgId } = res.locals as { orgId: string };
 
   const billResults = async (results: any[]) => {
     const { orgId, keySetId, keyId } = res.locals as {
@@ -119,7 +123,7 @@ router.post("/", upload, async (req, res) => {
         title,
         id,
         executionPlanReasoning,
-      } = await loadQuestionSet(questionSetId);
+      } = await loadQuestionSet(orgId, questionSetId);
 
       if (!questions.length) {
         sendEvent("error", { message: "No questions defined." });
@@ -135,6 +139,7 @@ router.post("/", upload, async (req, res) => {
       sendLog(`Extracted ${convCount} snippets, processing...`);
 
       const newQaResults = await processSnippets(
+        orgId,
         allRows,
         null, // fullSnippet is not used for xlsx
         {
@@ -181,7 +186,7 @@ router.post("/", upload, async (req, res) => {
     sendLog(`Received ${snippets.length} snippets.`);
 
     // Load question set
-    const questionSet = await loadQuestionSet(questionSetId);
+      const questionSet = await loadQuestionSet(orgId, questionSetId);
     if (!questionSet) {
       sendError(new Error(`Question set with ID ${questionSetId} not found.`));
       res.end();
@@ -207,7 +212,7 @@ router.post("/", upload, async (req, res) => {
     }
 
     // Process snippets
-    const qaResults = await processSnippets(null, snippets, questionSet, {
+    const qaResults = await processSnippets(orgId, null, snippets, questionSet, {
       sendLog,
       sendEvent,
       sendError,

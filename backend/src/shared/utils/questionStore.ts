@@ -2,20 +2,48 @@ import fs from "fs/promises";
 import path from "path";
 import { QAResult, QuestionSet } from "../types/Questions";
 
-const Q_DIR = path.join(__dirname, "../../../data/questions");
+const PROJECT_ROOT = path.resolve(__dirname, "../../../..");
+const QUESTIONS_ROOT = path.join(PROJECT_ROOT, "data/questions");
+const QA_RESULTS_ROOT = path.join(PROJECT_ROOT, "data/qaResults");
 const FILE_PREFIX = "questions-";
 
-export async function loadQuestionSet(id: string): Promise<QuestionSet> {
-  const files = await fs.readdir(Q_DIR);
+function toSafeSegment(value: string): string {
+  return encodeURIComponent(value).replace(/-/g, "%2D");
+}
 
+function toUnsafeSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getQuestionsDirForOrg(orgId: string): string {
+  return path.join(QUESTIONS_ROOT, toSafeSegment(orgId));
+}
+
+function getQaDirForOrg(orgId: string): string {
+  return path.join(QA_RESULTS_ROOT, toSafeSegment(orgId));
+}
+
+export async function loadQuestionSet(
+  orgId: string,
+  id: string,
+): Promise<QuestionSet> {
   if (!id) {
     throw new Error("No question set ID provided");
   }
-  if (!files.length) {
+
+  const dir = getQuestionsDirForOrg(orgId);
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
     throw new Error("No question sets found");
   }
 
-  const safeId = encodeURIComponent(id).replace(/-/g, "%2D");
+  const safeId = toSafeSegment(id);
   const filename = files.find((file) => {
     if (!file.startsWith(FILE_PREFIX) || !file.endsWith(".json")) return false;
     const basename = file.slice(FILE_PREFIX.length, -5);
@@ -25,10 +53,18 @@ export async function loadQuestionSet(id: string): Promise<QuestionSet> {
   if (!filename) {
     throw new Error(`Question set with id ${id} not found`);
   }
-  const raw = await fs.readFile(path.join(Q_DIR, filename), "utf-8");
-  const questionSet = JSON.parse(raw) as Omit<QuestionSet, "qaResults">;
+  const raw = await fs.readFile(path.join(dir, filename), "utf-8");
+  const parsed = JSON.parse(raw) as Omit<QuestionSet, "qaResults"> & {
+    orgId?: string;
+  };
 
-  const qaResults = await listQaResults({
+  if (parsed.orgId && parsed.orgId !== orgId) {
+    throw new Error("Question set does not belong to this organization");
+  }
+
+  const { orgId: _ignoredOrgId, ...questionSet } = parsed;
+
+  const qaResults = await listQaResults(orgId, {
     questionSetId: questionSet.id,
   });
 
@@ -39,25 +75,32 @@ export async function loadQuestionSet(id: string): Promise<QuestionSet> {
 }
 
 export async function saveQuestionSet(
-  store: Omit<QuestionSet, "qaResults">
+  orgId: string,
+  store: Omit<QuestionSet, "qaResults">,
 ): Promise<void> {
-  await fs.mkdir(Q_DIR, { recursive: true });
+  const dir = getQuestionsDirForOrg(orgId);
+  await fs.mkdir(dir, { recursive: true });
   const rawTitle = store.title || "untitled";
   const questionCount = store.questions.length;
-  const safeTitle = encodeURIComponent(rawTitle).replace(/-/g, "%2D");
-  const safeId = encodeURIComponent(store.id).replace(/-/g, "%2D");
+  const safeTitle = toSafeSegment(rawTitle);
+  const safeId = toSafeSegment(store.id);
   const filename = `${FILE_PREFIX}${safeTitle}-${safeId}-${questionCount}.json`;
+  const payload = {
+    ...store,
+    orgId,
+  };
   await fs.writeFile(
-    path.join(Q_DIR, filename),
-    JSON.stringify(store, null, 2),
-    "utf-8"
+    path.join(dir, filename),
+    JSON.stringify(payload, null, 2),
+    "utf-8",
   );
 }
 
 export async function listQuestionSets(
-  titleFilter?: string
+  orgId: string,
+  titleFilter?: string,
 ): Promise<{ id: string; title: string; date: Date; questionCount: number }[]> {
-  const qaResults = await listQaResults();
+  const qaResults = await listQaResults(orgId);
   const qaResultsByQuestionSetId = {} as Record<string, QAResult[]>;
   for (const qaResult of qaResults) {
     if (!qaResultsByQuestionSetId[qaResult.questionSetId]) {
@@ -66,7 +109,13 @@ export async function listQuestionSets(
     qaResultsByQuestionSetId[qaResult.questionSetId].push(qaResult);
   }
 
-  const files = await fs.readdir(Q_DIR);
+  const dir = getQuestionsDirForOrg(orgId);
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
   const result: {
     id: string;
     title: string;
@@ -76,25 +125,16 @@ export async function listQuestionSets(
   }[] = [];
 
   for (const file of files) {
+    if (file.startsWith(".DELETED_")) continue;
     if (!file.startsWith(FILE_PREFIX) || !file.endsWith(".json")) continue;
     const basename = file.slice(FILE_PREFIX.length, -5);
     const parts = basename.split("-");
     if (parts.length !== 3) continue;
     const [safeTitle, safeId, countStr] = parts;
-    let title: string;
-    try {
-      title = decodeURIComponent(safeTitle);
-    } catch {
-      title = safeTitle;
-    }
-    let id: string;
-    try {
-      id = decodeURIComponent(safeId);
-    } catch {
-      id = safeId;
-    }
+    const title = toUnsafeSegment(safeTitle);
+    const id = toUnsafeSegment(safeId);
     const questionCount = Number(countStr);
-    const stat = await fs.stat(path.join(Q_DIR, file));
+    const stat = await fs.stat(path.join(dir, file));
 
     result.push({
       id,
@@ -114,16 +154,14 @@ export async function listQuestionSets(
 }
 
 export const loadQaResult = async (
+  orgId: string,
   snippetId: string,
-  questionSetId: string
+  questionSetId: string,
 ): Promise<QAResult | null> => {
+  const dir = getQaDirForOrg(orgId);
   const filePath = path.join(
-    __dirname,
-    "../../../data/qaResults",
-    `${questionSetId.replace(/-/g, "%2D")}-${snippetId.replace(
-      /-/g,
-      "%2D"
-    )}.json`
+    dir,
+    `${toSafeSegment(questionSetId)}-${toSafeSegment(snippetId)}.json`,
   );
   try {
     const data = await fs.readFile(filePath, "utf-8");
@@ -133,25 +171,26 @@ export const loadQaResult = async (
     return null;
   }
 };
-export const saveQaResult = async (qaResult: QAResult): Promise<void> => {
+export const saveQaResult = async (
+  orgId: string,
+  qaResult: QAResult,
+): Promise<void> => {
+  const dir = getQaDirForOrg(orgId);
   const filePath = path.join(
-    __dirname,
-    "../../../data/qaResults",
-    `${encodeURIComponent(qaResult.questionSetId).replace(
-      /-/g,
-      "%2D"
-    )}-${encodeURIComponent(qaResult.snippetId).replace(/-/g, "%2D")}.json`
+    dir,
+    `${toSafeSegment(qaResult.questionSetId)}-${toSafeSegment(
+      qaResult.snippetId,
+    )}.json`,
   );
   try {
-    await fs.mkdir(path.join(__dirname, "../../../data/qaResults"), {
-      recursive: true,
-    });
+    await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(filePath, JSON.stringify(qaResult, null, 2), "utf-8");
   } catch (error) {
     console.error("Error saving QA result:", error);
   }
 };
 export const listQaResults = async (
+  orgId: string,
   params: {
     questionSetId?: string;
     snippetId?: string;
@@ -159,20 +198,19 @@ export const listQaResults = async (
 ): Promise<QAResult[]> => {
   console.log("Listing QA results with params:", params);
 
-  const dirPath = path.join(__dirname, "../../../data/qaResults");
+  const dirPath = getQaDirForOrg(orgId);
   const { questionSetId, snippetId } = params;
   try {
     const files = await fs.readdir(dirPath);
     const results: QAResult[] = [];
     for (const file of files) {
-      if (!file.endsWith(".json")) continue;
-      const [safeQuestionSetId, safeSnippetId] = file
-        .slice(0, -5)
-        .split("-")
-        .map((part) => decodeURIComponent(part));
+      if (!file.endsWith(".json") || file.startsWith(".DELETED_")) continue;
+      const [safeQuestionSetId, safeSnippetId] = file.slice(0, -5).split("-");
+      const resolvedQuestionSetId = toUnsafeSegment(safeQuestionSetId);
+      const resolvedSnippetId = toUnsafeSegment(safeSnippetId);
       if (
-        (questionSetId && questionSetId !== safeQuestionSetId) ||
-        (snippetId && snippetId !== safeSnippetId)
+        (questionSetId && questionSetId !== resolvedQuestionSetId) ||
+        (snippetId && snippetId !== resolvedSnippetId)
       )
         continue;
       const data = await fs.readFile(path.join(dirPath, file), "utf-8");
@@ -185,14 +223,22 @@ export const listQaResults = async (
   }
 };
 
-export async function softDeleteQuestionSet(id: string): Promise<void> {
+export async function softDeleteQuestionSet(
+  orgId: string,
+  id: string,
+): Promise<void> {
   if (!id) {
     throw new Error("No question set ID provided");
   }
-  const safeId = encodeURIComponent(id).replace(/-/g, "%2D");
+  const safeId = toSafeSegment(id);
 
-  // Rename question set file
-  const files = await fs.readdir(Q_DIR);
+  const dir = getQuestionsDirForOrg(orgId);
+  let files: string[];
+  try {
+    files = await fs.readdir(dir);
+  } catch {
+    throw new Error(`Question set with id ${id} not found`);
+  }
   const filename = files.find((file) => {
     if (!file.startsWith(FILE_PREFIX) || !file.endsWith(".json")) return false;
     const basename = file.slice(FILE_PREFIX.length, -5);
@@ -202,18 +248,16 @@ export async function softDeleteQuestionSet(id: string): Promise<void> {
   if (!filename) {
     throw new Error(`Question set with id ${id} not found`);
   }
-  const oldPath = path.join(Q_DIR, filename);
+  const oldPath = path.join(dir, filename);
   const newFilename = `.DELETED_${filename}`;
-  const newPath = path.join(Q_DIR, newFilename);
+  const newPath = path.join(dir, newFilename);
   await fs.rename(oldPath, newPath);
 
-  // Rename related QA result files
-  const qaDir = path.join(__dirname, "../../../data/qaResults");
+  const qaDir = getQaDirForOrg(orgId);
   let qaFiles: string[];
   try {
     qaFiles = await fs.readdir(qaDir);
   } catch {
-    // No QA results directory; nothing to rename
     return;
   }
   const prefix = `${safeId}-`;

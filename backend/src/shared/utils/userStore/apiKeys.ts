@@ -2,6 +2,9 @@ import crypto from "crypto";
 import { v4 as uuid } from "uuid";
 
 import { KeySet, StoredApiKey } from "../../types/Identity";
+import {
+  createDefaultDocumentAnalysisConfig,
+} from "../../types/Products";
 import { decryptValue, encryptValue, hashApiKey } from "./crypto";
 import { now } from "./time";
 
@@ -42,6 +45,12 @@ export function createDefaultKeySet(actorId: string): KeySet {
     keys: [keyA, keyB],
     createdAt,
     createdBy: actorId,
+    products: [
+      createDefaultDocumentAnalysisConfig({
+        createQuestionSet: true,
+        evaluateDocument: true,
+      }),
+    ],
   };
 }
 

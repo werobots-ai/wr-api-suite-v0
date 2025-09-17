@@ -35,6 +35,7 @@ export interface KeySet {
   keys: StoredApiKey[];
   createdBy: string;
   createdAt: string;
+  products: ProductKeyConfig[];
 }
 
 export interface BillingProfile {
@@ -102,3 +103,4 @@ export interface IdentityStoreData {
   auditLog: AuditLogEntry[];
   metadata: IdentityMetadata;
 }
+import { ProductKeyConfig } from "./Products";

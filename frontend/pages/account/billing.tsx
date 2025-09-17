@@ -4,6 +4,16 @@ import UsageBreakdown from "@/components/UsageBreakdown";
 import { fetchJSON } from "@/lib/api";
 import { OrgRole, SafeApiKey, SafeKeySet, SafeUser, UsageEntry } from "@/types/account";
 import { useAuth } from "@/context/AuthContext";
+import {
+  API_PLATFORM_PRODUCT_ID,
+  DOCUMENT_ANALYSIS_PRODUCT_ID,
+  INSIGHTS_SANDBOX_PRODUCT_ID,
+  ProductKeyConfig,
+  cloneProductConfig,
+  isApiPlatformConfig,
+  isDocumentAnalysisConfig,
+  isInsightsSandboxConfig,
+} from "@/types/products";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -20,6 +30,12 @@ type KeyReveal = {
   title?: string;
 };
 
+type NewKeySetForm = {
+  name: string;
+  description: string;
+  products: ProductKeyConfig[];
+};
+
 const ROLE_OPTIONS: { label: string; value: OrgRole }[] = [
   { label: "Owner", value: "OWNER" },
   { label: "Admin", value: "ADMIN" },
@@ -28,10 +44,50 @@ const ROLE_OPTIONS: { label: string; value: OrgRole }[] = [
 ];
 
 export default function BillingPage() {
-  const { organization, permissions, refreshAccount, loading } = useAuth();
+  const { organization, permissions, refreshAccount, loading, productCatalog } =
+    useAuth();
+  const buildInitialProducts = useCallback((): ProductKeyConfig[] => {
+    const fromCatalog = productCatalog.map((product) =>
+      cloneProductConfig(product.defaultConfig),
+    );
+    const baseList = fromCatalog.length
+      ? fromCatalog
+      : [
+          {
+            productId: DOCUMENT_ANALYSIS_PRODUCT_ID,
+            permissions: { createQuestionSet: true, evaluateDocument: true },
+          },
+          {
+            productId: INSIGHTS_SANDBOX_PRODUCT_ID,
+            options: { accessLevel: "none", betaFeatures: false },
+          },
+          {
+            productId: API_PLATFORM_PRODUCT_ID,
+            options: { environment: "sandbox", allowModelTraining: false },
+          },
+        ];
+
+    return baseList.map((config) => {
+      if (isDocumentAnalysisConfig(config)) {
+        return {
+          ...config,
+          permissions: {
+            ...config.permissions,
+            createQuestionSet: true,
+            evaluateDocument: true,
+          },
+        };
+      }
+      return cloneProductConfig(config);
+    });
+  }, [productCatalog]);
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [amount, setAmount] = useState<number>(0);
-  const [newSet, setNewSet] = useState({ name: "", description: "" });
+  const [newSet, setNewSet] = useState<NewKeySetForm>(() => ({
+    name: "",
+    description: "",
+    products: buildInitialProducts(),
+  }));
   const [revealModal, setRevealModal] = useState<KeyReveal | null>(null);
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [memberForm, setMemberForm] = useState({
@@ -43,11 +99,83 @@ export default function BillingPage() {
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
   const [memberError, setMemberError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setNewSet((current) => {
+      const baseline = buildInitialProducts();
+      const merged = baseline.map((config) => {
+        const existing = current.products.find(
+          (p) => p.productId === config.productId,
+        );
+        return cloneProductConfig(existing ?? config);
+      });
+      return { ...current, products: merged };
+    });
+  }, [buildInitialProducts]);
+
+  const updateProductConfig = useCallback(
+    (
+      productId: string,
+      updater: (config: ProductKeyConfig) => ProductKeyConfig,
+    ) => {
+      setNewSet((current) => {
+        const baseline = buildInitialProducts();
+        const merged = baseline.map((config) => {
+          const existing = current.products.find(
+            (p) => p.productId === config.productId,
+          );
+          const source = existing ?? config;
+          const next = source.productId === productId ? updater(source) : source;
+          return cloneProductConfig(next);
+        });
+        return { ...current, products: merged };
+      });
+    },
+    [buildInitialProducts],
+  );
+
   const canManageKeys = Boolean(permissions?.manageKeys);
   const canManageBilling = Boolean(permissions?.manageBilling);
   const canManageUsers = Boolean(permissions?.manageUsers);
   const canViewMembers = canManageUsers || canManageBilling;
   const canViewInternalCosts = Boolean(permissions?.viewInternalCosts);
+  const resolveProductName = (productId: string) =>
+    productCatalog.find((product) => product.id === productId)?.name || productId;
+  const documentProductConfig = newSet.products.find(
+    (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+  );
+  const insightsProductConfig = newSet.products.find(
+    (product) => product.productId === INSIGHTS_SANDBOX_PRODUCT_ID,
+  );
+  const apiProductConfig = newSet.products.find(
+    (product) => product.productId === API_PLATFORM_PRODUCT_ID,
+  );
+  const renderProductSummary = (product: ProductKeyConfig) => {
+    if (isDocumentAnalysisConfig(product)) {
+      const grants = [] as string[];
+      if (product.permissions.createQuestionSet) {
+        grants.push("create question sets");
+      }
+      if (product.permissions.evaluateDocument) {
+        grants.push("evaluate documents");
+      }
+      return grants.length ? grants.join(", ") : "no permissions";
+    }
+    if (isInsightsSandboxConfig(product)) {
+      const grants = [`access: ${product.options.accessLevel}`];
+      if (product.options.betaFeatures) {
+        grants.push("beta features");
+      }
+      return grants.join(", ");
+    }
+    if (isApiPlatformConfig(product)) {
+      const grants = [`env: ${product.options.environment}`];
+      if (product.options.allowModelTraining) {
+        grants.push("model training");
+      }
+      return grants.join(", ");
+    }
+    return "configured";
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing`)
@@ -119,7 +247,11 @@ export default function BillingPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newSet),
     });
-    setNewSet({ name: "", description: "" });
+    setNewSet({
+      name: "",
+      description: "",
+      products: buildInitialProducts(),
+    });
     setRevealModal({
       keys: result.revealedKeys,
       context: `Key set "${result.keySet.name}" created. Share these values only with trusted clients and store them securely.`,
@@ -408,6 +540,17 @@ export default function BillingPage() {
                   )}
                 </div>
                 <p>{set.description}</p>
+                <div className="product-summary">
+                  <h4>Product access</h4>
+                  <ul>
+                    {set.products.map((product) => (
+                      <li key={product.productId}>
+                        <strong>{resolveProductName(product.productId)}:</strong>{" "}
+                        {renderProductSummary(product)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 <ul>
                   {set.keys.map((k, idx) => {
                     const total = k.usage.reduce((a, b) => a + b.billedCost, 0);
@@ -474,6 +617,163 @@ export default function BillingPage() {
                   value={newSet.description}
                   onChange={(e) => setNewSet({ ...newSet, description: e.target.value })}
                 />
+                {documentProductConfig &&
+                  isDocumentAnalysisConfig(documentProductConfig) && (
+                    <fieldset className="product-fieldset">
+                      <legend>
+                        {resolveProductName(DOCUMENT_ANALYSIS_PRODUCT_ID)}
+                      </legend>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={documentProductConfig.permissions.createQuestionSet}
+                          onChange={(e) =>
+                            updateProductConfig(
+                              DOCUMENT_ANALYSIS_PRODUCT_ID,
+                              (config) => {
+                                if (!isDocumentAnalysisConfig(config)) return config;
+                                return {
+                                  ...config,
+                                  permissions: {
+                                    ...config.permissions,
+                                    createQuestionSet: e.target.checked,
+                                  },
+                                };
+                              },
+                            )
+                          }
+                        />
+                        Allow question set creation
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={documentProductConfig.permissions.evaluateDocument}
+                          onChange={(e) =>
+                            updateProductConfig(
+                              DOCUMENT_ANALYSIS_PRODUCT_ID,
+                              (config) => {
+                                if (!isDocumentAnalysisConfig(config)) return config;
+                                return {
+                                  ...config,
+                                  permissions: {
+                                    ...config.permissions,
+                                    evaluateDocument: e.target.checked,
+                                  },
+                                };
+                              },
+                            )
+                          }
+                        />
+                        Allow document evaluation
+                      </label>
+                    </fieldset>
+                  )}
+                {insightsProductConfig &&
+                  isInsightsSandboxConfig(insightsProductConfig) && (
+                    <fieldset className="product-fieldset">
+                      <legend>
+                        {resolveProductName(INSIGHTS_SANDBOX_PRODUCT_ID)}
+                      </legend>
+                      <label>
+                        Access level
+                        <select
+                          value={insightsProductConfig.options.accessLevel}
+                          onChange={(e) =>
+                            updateProductConfig(
+                              INSIGHTS_SANDBOX_PRODUCT_ID,
+                              (config) => {
+                                if (!isInsightsSandboxConfig(config)) return config;
+                                return {
+                                  ...config,
+                                  options: {
+                                    ...config.options,
+                                    accessLevel: e.target.value as
+                                      | "none"
+                                      | "read"
+                                      | "write",
+                                  },
+                                };
+                              },
+                            )
+                          }
+                        >
+                          <option value="none">No access</option>
+                          <option value="read">Read-only</option>
+                          <option value="write">Full access</option>
+                        </select>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={insightsProductConfig.options.betaFeatures}
+                          onChange={(e) =>
+                            updateProductConfig(
+                              INSIGHTS_SANDBOX_PRODUCT_ID,
+                              (config) => {
+                                if (!isInsightsSandboxConfig(config)) return config;
+                                return {
+                                  ...config,
+                                  options: {
+                                    ...config.options,
+                                    betaFeatures: e.target.checked,
+                                  },
+                                };
+                              },
+                            )
+                          }
+                        />
+                        Enable beta features
+                      </label>
+                    </fieldset>
+                  )}
+                {apiProductConfig && isApiPlatformConfig(apiProductConfig) && (
+                  <fieldset className="product-fieldset">
+                    <legend>{resolveProductName(API_PLATFORM_PRODUCT_ID)}</legend>
+                    <label>
+                      Environment
+                      <select
+                        value={apiProductConfig.options.environment}
+                        onChange={(e) =>
+                          updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
+                            if (!isApiPlatformConfig(config)) return config;
+                            return {
+                              ...config,
+                              options: {
+                                ...config.options,
+                                environment: e.target.value as
+                                  | "sandbox"
+                                  | "production",
+                              },
+                            };
+                          })
+                        }
+                      >
+                        <option value="sandbox">Sandbox</option>
+                        <option value="production">Production</option>
+                      </select>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={apiProductConfig.options.allowModelTraining}
+                        onChange={(e) =>
+                          updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
+                            if (!isApiPlatformConfig(config)) return config;
+                            return {
+                              ...config,
+                              options: {
+                                ...config.options,
+                                allowModelTraining: e.target.checked,
+                              },
+                            };
+                          })
+                        }
+                      />
+                      Allow model training
+                    </label>
+                  </fieldset>
+                )}
                 <button onClick={handleAddKeySet} disabled={!newSet.name}>
                   Add Key Set
                 </button>

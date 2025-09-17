@@ -4,16 +4,26 @@ import path from "path";
 import { IdentityStoreData } from "../../types/Identity";
 import { IDENTITY_FILE, setInternalOrgIds } from "./config";
 import { createBootstrapIdentity } from "./bootstrap";
+import { normalizeProductConfigs } from "./productConfig";
 
 function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
   const organizations = Object.fromEntries(
-    Object.entries(store.organizations || {}).map(([id, org]) => [
-      id,
-      {
-        ...org,
-        isMaster: Boolean(org.isMaster),
-      },
-    ]),
+    Object.entries(store.organizations || {}).map(([id, org]) => {
+      const keySets = (org.keySets || []).map((set) => ({
+        ...set,
+        products: normalizeProductConfigs(set.products, {
+          ensureDocument: true,
+        }),
+      }));
+      return [
+        id,
+        {
+          ...org,
+          keySets,
+          isMaster: Boolean(org.isMaster),
+        },
+      ];
+    }),
   );
 
   return {

@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   AccountPermissions,
+  ProductCatalogResponse,
   SafeOrganization,
   SafeUser,
 } from "@/types/account";
@@ -23,6 +24,7 @@ interface AuthContextValue {
   permissions: AccountPermissions | null;
   activeOrgId: string | null;
   loading: boolean;
+  productCatalog: ProductCatalogResponse;
   login: (email: string, password: string) => Promise<void>;
   signup: (input: {
     organizationName: string;
@@ -66,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<SafeOrganization[]>([]);
   const [permissions, setPermissions] = useState<AccountPermissions | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [productCatalog, setProductCatalog] = useState<ProductCatalogResponse>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchWithAuth = useCallback(
@@ -113,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(accountData.user);
         setOrganization(accountData.organization);
         setPermissions(accountData.permissions);
+        setProductCatalog(accountData.productCatalog ?? []);
         const resolvedOrgId =
           orgId ?? activeOrgId ?? accountData.organization?.id ?? null;
         if (resolvedOrgId) {
@@ -144,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveOrgId(null);
     setStoredValue("wr_auth_token", null);
     setStoredValue("wr_active_org", null);
+    setProductCatalog([]);
   }, []);
 
   useEffect(() => {
@@ -263,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       permissions,
       activeOrgId,
       loading,
+      productCatalog,
       login,
       signup,
       bootstrapMaster,
@@ -278,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       permissions,
       activeOrgId,
       loading,
+      productCatalog,
       login,
       signup,
       bootstrapMaster,

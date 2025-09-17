@@ -5,11 +5,13 @@ import {
   createOrUpdateOrgUser,
   getOrganization,
   getUsersForOrganization,
+  getProductCatalog,
   removeKeySet,
   rotateApiKey,
   toSafeOrganization,
   toSafeUser,
   topUpOrganization,
+  normalizeProductConfigs,
 } from "../utils/userStore";
 import { OrgRole } from "../types/Identity";
 
@@ -58,6 +60,7 @@ router.get("/", async (req, res) => {
     }),
     user,
     permissions,
+    productCatalog: getProductCatalog(),
   });
 });
 
@@ -104,7 +107,7 @@ router.post("/keysets", express.json(), async (req, res) => {
     return;
   }
 
-  const { name, description } = req.body;
+  const { name, description, products } = req.body;
   if (!name) {
     res.status(400).json({ error: "Name is required" });
     return;
@@ -117,7 +120,19 @@ router.post("/keysets", express.json(), async (req, res) => {
     return;
   }
   const maskCosts = !org.isMaster;
-  const result = await addKeySet(orgId, actorId, name, description || "", { maskCosts });
+  const normalizedProducts = normalizeProductConfigs(products, {
+    ensureDocument: true,
+  });
+  const result = await addKeySet(
+    {
+      orgId,
+      actorId,
+      name,
+      description: description || "",
+      products: normalizedProducts,
+    },
+    { maskCosts },
+  );
   res.json(result);
 });
 
