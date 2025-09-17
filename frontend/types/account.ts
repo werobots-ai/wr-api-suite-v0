@@ -49,6 +49,7 @@ export type SafeOrganization = {
   name: string;
   slug: string;
   credits: number;
+  isMaster: boolean;
   usage: UsageEntry[];
   keySets: SafeKeySet[];
   billingProfile: BillingProfile;

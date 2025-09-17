@@ -22,7 +22,9 @@ function formatCurrency(amount: number, decimals = 2): string {
 
 export default function AdminConsole() {
   const { user, loading } = useAuth();
-  const isSysAdmin = Boolean(user?.globalRoles.includes("SYSADMIN"));
+  const hasPlatformAccess = Boolean(
+    user?.globalRoles.some((role) => role === "SYSADMIN" || role === "MASTER_ADMIN"),
+  );
 
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -32,6 +34,10 @@ export default function AdminConsole() {
     null,
   );
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "master" | "tenant">("all");
+  const [masterUpdateMessage, setMasterUpdateMessage] = useState<string | null>(null);
+  const [masterUpdateError, setMasterUpdateError] = useState<string | null>(null);
+  const [updatingMaster, setUpdatingMaster] = useState(false);
 
   const loadOverview = useCallback(async () => {
     setLoadingOverview(true);
@@ -48,43 +54,65 @@ export default function AdminConsole() {
   }, []);
 
   useEffect(() => {
-    if (!isSysAdmin) return;
+    if (!hasPlatformAccess) return;
     void loadOverview();
-  }, [isSysAdmin, loadOverview]);
-
-  useEffect(() => {
-    if (!overview) return;
-    const firstId = overview.organizations[0]?.organization.id ?? null;
-    if (!selectedOrgId && firstId) {
-      setSelectedOrgId(firstId);
-    } else if (
-      selectedOrgId &&
-      !overview.organizations.some((entry) => entry.organization.id === selectedOrgId) &&
-      firstId &&
-      firstId !== selectedOrgId
-    ) {
-      setSelectedOrgId(firstId);
-    }
-  }, [overview, selectedOrgId]);
+  }, [hasPlatformAccess, loadOverview]);
 
   const filteredOrganizations = useMemo(() => {
     if (!overview) return [] as PlatformOrganization[];
     const term = search.trim().toLowerCase();
-    if (!term) return overview.organizations;
-    return overview.organizations.filter((entry) =>
-      [entry.organization.name, entry.organization.slug]
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [overview, search]);
+    return overview.organizations.filter((entry) => {
+      const matchesSearch =
+        term.length === 0 ||
+        [entry.organization.name, entry.organization.slug]
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+      const matchesFilter =
+        filter === "all"
+          ? true
+          : filter === "master"
+          ? entry.organization.isMaster
+          : !entry.organization.isMaster;
+      return matchesSearch && matchesFilter;
+    });
+  }, [overview, search, filter]);
+
+  useEffect(() => {
+    if (!overview) {
+      setSelectedOrgId(null);
+      return;
+    }
+    if (filteredOrganizations.length === 0) {
+      setSelectedOrgId(null);
+      return;
+    }
+    if (
+      !selectedOrgId ||
+      !filteredOrganizations.some(
+        (entry) => entry.organization.id === selectedOrgId,
+      )
+    ) {
+      setSelectedOrgId(filteredOrganizations[0].organization.id);
+    }
+  }, [overview, filteredOrganizations, selectedOrgId]);
+
+  useEffect(() => {
+    setMasterUpdateMessage(null);
+    setMasterUpdateError(null);
+  }, [selectedOrgId]);
 
   const selectedOrganization = useMemo(() => {
-    if (!overview || !selectedOrgId) return null;
+    if (!selectedOrgId) return null;
+    const inFiltered = filteredOrganizations.find(
+      (entry) => entry.organization.id === selectedOrgId,
+    );
+    if (inFiltered) return inFiltered;
+    if (!overview) return null;
     return (
       overview.organizations.find((entry) => entry.organization.id === selectedOrgId) || null
     );
-  }, [overview, selectedOrgId]);
+  }, [filteredOrganizations, overview, selectedOrgId]);
 
   const profitMargin = useMemo(() => {
     if (!overview || overview.totals.totalBilled === 0) return 0;
@@ -134,14 +162,48 @@ export default function AdminConsole() {
     [loadOverview],
   );
 
+  const toggleMasterStatus = useCallback(
+    async (org: PlatformOrganization, desired: boolean) => {
+      setMasterUpdateError(null);
+      setMasterUpdateMessage(null);
+      setUpdatingMaster(true);
+      try {
+        await fetchJSON<{ organization: PlatformOrganization["organization"] }>(
+          `${API_URL}/api/admin/organizations/${org.organization.id}/master`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isMaster: desired }),
+          },
+        );
+        setMasterUpdateMessage(
+          desired
+            ? `${org.organization.name} is now marked as a master organization.`
+            : `${org.organization.name} is no longer marked as a master organization.`,
+        );
+        await loadOverview();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setMasterUpdateError(message || "Failed to update master status");
+      } finally {
+        setUpdatingMaster(false);
+      }
+    },
+    [loadOverview],
+  );
+
   const closeKeyModal = () => setKeyModal(null);
 
-  if (!isSysAdmin) {
+  if (!hasPlatformAccess) {
     return (
       <div className="admin-container">
         <div className="card">
           <h1>WeRobots platform console</h1>
-          {loading ? <p>Loading user session...</p> : <p>Sysadmin access required.</p>}
+          {loading ? (
+            <p>Loading user session...</p>
+          ) : (
+            <p>Master owner or sysadmin access required.</p>
+          )}
         </div>
       </div>
     );
@@ -218,7 +280,32 @@ export default function AdminConsole() {
           <div className="console-layout">
             <aside className="org-panel">
               <div className="org-header">
-                <h2>Organizations</h2>
+                <div className="org-header-left">
+                  <h2>Organizations</h2>
+                  <div className="org-filters">
+                    <button
+                      type="button"
+                      className={filter === "all" ? "active" : undefined}
+                      onClick={() => setFilter("all")}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      className={filter === "master" ? "active" : undefined}
+                      onClick={() => setFilter("master")}
+                    >
+                      Master orgs
+                    </button>
+                    <button
+                      type="button"
+                      className={filter === "tenant" ? "active" : undefined}
+                      onClick={() => setFilter("tenant")}
+                    >
+                      Tenants
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="search"
                   placeholder="Search by name or slug"
@@ -258,6 +345,9 @@ export default function AdminConsole() {
                           <div className="org-name">
                             <strong>{entry.organization.name}</strong>
                             <span>{entry.organization.slug}</span>
+                            {entry.organization.isMaster && (
+                              <span className="tag master">Master</span>
+                            )}
                           </div>
                         </td>
                         <td>{formatCurrency(entry.usage.totalBilled)}</td>
@@ -282,13 +372,42 @@ export default function AdminConsole() {
                     <div>
                       <h2>{selectedOrganization.organization.name}</h2>
                       <p className="muted">{selectedOrganization.organization.slug}</p>
+                      <span
+                        className={`tag ${selectedOrganization.organization.isMaster ? "master" : "tenant"}`}
+                      >
+                        {selectedOrganization.organization.isMaster
+                          ? "Master organization"
+                          : "Tenant organization"}
+                      </span>
                     </div>
                     <div className="detail-actions">
                       <button type="button" onClick={() => void loadOverview()} disabled={loadingOverview}>
                         {loadingOverview ? "Refreshing..." : "Refresh org"}
                       </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() =>
+                          toggleMasterStatus(
+                            selectedOrganization,
+                            !selectedOrganization.organization.isMaster,
+                          )
+                        }
+                        disabled={updatingMaster}
+                      >
+                        {updatingMaster
+                          ? "Updating..."
+                          : selectedOrganization.organization.isMaster
+                          ? "Remove master status"
+                          : "Make master org"}
+                      </button>
                     </div>
                   </header>
+                  {(masterUpdateMessage || masterUpdateError) && (
+                    <div className={`notice ${masterUpdateError ? "error" : "success"}`}>
+                      {masterUpdateError ?? masterUpdateMessage}
+                    </div>
+                  )}
                   <div className="detail-grid">
                     <div className="detail-card">
                       <span className="label">Gross billed</span>
@@ -470,6 +589,16 @@ export default function AdminConsole() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+        .detail-actions {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+        .detail-actions .secondary {
+          background: #fff;
+          color: #1890ff;
+          border: 1px solid #1890ff;
+        }
         .summary-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -524,6 +653,30 @@ export default function AdminConsole() {
           flex-direction: column;
           gap: 0.75rem;
         }
+        .org-header-left {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .org-filters {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        .org-filters button {
+          padding: 0.3rem 0.6rem;
+          border: 1px solid #d9d9d9;
+          border-radius: 999px;
+          background: #fff;
+          color: #595959;
+          font-size: 0.8rem;
+          cursor: pointer;
+        }
+        .org-filters button.active {
+          background: #1890ff;
+          color: #fff;
+          border-color: #1890ff;
+        }
         .org-header h2 {
           margin: 0;
         }
@@ -568,6 +721,32 @@ export default function AdminConsole() {
         .org-name span {
           font-size: 0.75rem;
           color: #8c8c8c;
+        }
+        .tag {
+          display: inline-flex;
+          align-items: center;
+          font-size: 0.7rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          padding: 0.15rem 0.45rem;
+          border-radius: 999px;
+          background: #f0f0f0;
+          color: #555;
+        }
+        .tag.master {
+          background: #e6f7ff;
+          color: #096dd9;
+        }
+        .tag.tenant {
+          background: #f9f0ff;
+          color: #722ed1;
+        }
+        .org-name .tag {
+          margin-top: 0.35rem;
+        }
+        .detail-header .tag {
+          margin-top: 0.25rem;
         }
         .empty-row {
           text-align: center;
@@ -723,6 +902,10 @@ export default function AdminConsole() {
         .notice.error {
           background: #fff2f0;
           border: 1px solid #ffccc7;
+        }
+        .notice.success {
+          background: #f6ffed;
+          border: 1px solid #b7eb8f;
         }
         .notice.info {
           background: #e6f7ff;

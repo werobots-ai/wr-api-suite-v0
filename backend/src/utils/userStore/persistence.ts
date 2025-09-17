@@ -2,26 +2,62 @@ import fs from "fs/promises";
 import path from "path";
 
 import { IdentityStoreData } from "../../types/Identity";
-import { IDENTITY_FILE } from "./config";
+import { IDENTITY_FILE, setInternalOrgIds } from "./config";
 import { createBootstrapIdentity } from "./bootstrap";
+
+function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
+  const organizations = Object.fromEntries(
+    Object.entries(store.organizations || {}).map(([id, org]) => [
+      id,
+      {
+        ...org,
+        isMaster: Boolean(org.isMaster),
+      },
+    ]),
+  );
+
+  return {
+    users: store.users || {},
+    organizations,
+    auditLog: store.auditLog || [],
+    metadata: {
+      bootstrapCompletedAt: store.metadata?.bootstrapCompletedAt ?? null,
+    },
+  };
+}
+
+function applyStoreSideEffects(store: IdentityStoreData): IdentityStoreData {
+  const normalized = normalizeIdentity(store);
+  const masterOrgIds = Object.values(normalized.organizations)
+    .filter((org) => org.isMaster)
+    .map((org) => org.id);
+  setInternalOrgIds(masterOrgIds);
+  return normalized;
+}
 
 async function ensureDirectory() {
   await fs.mkdir(path.dirname(IDENTITY_FILE), { recursive: true });
 }
 
 export async function saveIdentity(store: IdentityStoreData): Promise<void> {
+  const normalized = normalizeIdentity(store);
   await ensureDirectory();
-  await fs.writeFile(IDENTITY_FILE, JSON.stringify(store, null, 2), "utf-8");
+  await fs.writeFile(IDENTITY_FILE, JSON.stringify(normalized, null, 2), "utf-8");
+  const masterOrgIds = Object.values(normalized.organizations)
+    .filter((org) => org.isMaster)
+    .map((org) => org.id);
+  setInternalOrgIds(masterOrgIds);
 }
 
 export async function loadIdentity(): Promise<IdentityStoreData> {
   try {
     const raw = await fs.readFile(IDENTITY_FILE, "utf-8");
-    return JSON.parse(raw) as IdentityStoreData;
+    const parsed = JSON.parse(raw) as IdentityStoreData;
+    return applyStoreSideEffects(parsed);
   } catch {
     const bootstrap = await createBootstrapIdentity();
     await saveIdentity(bootstrap);
-    return bootstrap;
+    return applyStoreSideEffects(bootstrap);
   }
 }
 
