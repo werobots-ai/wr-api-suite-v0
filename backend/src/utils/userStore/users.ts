@@ -5,7 +5,7 @@ import {
   GlobalRole,
   OrgRole,
   UserAccount,
-} from "../types/Identity";
+} from "../../types/Identity";
 import { createPasswordHash } from "./passwords";
 import { loadIdentity, saveIdentity } from "./persistence";
 import { now } from "./time";

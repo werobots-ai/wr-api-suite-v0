@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { IdentityStoreData } from "../types/Identity";
+import { IdentityStoreData } from "../../types/Identity";
 import { IDENTITY_FILE } from "./config";
 import { createBootstrapIdentity } from "./bootstrap";
 

@@ -4,7 +4,7 @@ import {
   IdentityStoreData,
   Organization,
   UserAccount,
-} from "../types/Identity";
+} from "../../types/Identity";
 import { createDefaultKeySet } from "./apiKeys";
 import { createPasswordHash } from "./passwords";
 import { slugify } from "./helpers";

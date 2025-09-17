@@ -4,7 +4,7 @@ import {
   StoredApiKey,
   UsageEntry,
   UserAccount,
-} from "../types/Identity";
+} from "../../types/Identity";
 import { maskFromLastFour } from "./helpers";
 
 export interface SafeEntityOptions {

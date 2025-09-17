@@ -4,7 +4,7 @@ import {
   KeySet,
   Organization,
   StoredApiKey,
-} from "../types/Identity";
+} from "../../types/Identity";
 import { createStoredKeyFromPlain, generatePlainApiKey } from "./apiKeys";
 import { hashApiKey } from "./crypto";
 import { loadIdentity, saveIdentity } from "./persistence";

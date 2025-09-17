@@ -1,4 +1,4 @@
-import { UsageEntry } from "../types/Identity";
+import { UsageEntry } from "../../types/Identity";
 import { loadIdentity } from "./persistence";
 import { toSafeOrganization } from "./safeEntities";
 

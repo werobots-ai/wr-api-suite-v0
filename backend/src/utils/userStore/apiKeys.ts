@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { v4 as uuid } from "uuid";
 
-import { KeySet, StoredApiKey } from "../types/Identity";
+import { KeySet, StoredApiKey } from "../../types/Identity";
 import { decryptValue, encryptValue, hashApiKey } from "./crypto";
 import { now } from "./time";
 

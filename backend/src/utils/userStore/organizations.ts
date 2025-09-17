@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 
-import { Organization, UsageEntry, UserAccount } from "../types/Identity";
+import { Organization, UsageEntry, UserAccount } from "../../types/Identity";
 import { createDefaultKeySet, revealStoredKey } from "./apiKeys";
 import { createPasswordHash } from "./passwords";
 import { loadIdentity, saveIdentity } from "./persistence";
