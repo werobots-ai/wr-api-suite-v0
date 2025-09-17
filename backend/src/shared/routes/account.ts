@@ -220,6 +220,7 @@ router.get("/users", async (req, res) => {
     res.status(404).json({ error: "Organization not found" });
     return;
   }
+  const maskCosts = !org.isMaster;
 
   const users = await getUsersForOrganization(orgId);
   const mapped = users.map((user) => {
@@ -227,10 +228,16 @@ router.get("/users", async (req, res) => {
     const productAccess = membership
       ? membership.productAccess.map((config) => cloneProductConfig(config))
       : [];
+    const usage = (membership?.usage ?? []).map((entry) => ({
+      ...entry,
+      tokenCost: maskCosts ? null : entry.tokenCost,
+    }));
     return {
       ...toSafeUser(user),
       roles: membership?.roles ?? [],
       productAccess,
+      usage,
+      lastAccessed: membership?.lastAccessed ?? null,
     };
   });
 
@@ -291,12 +298,21 @@ router.post("/users", express.json(), async (req, res) => {
   const safeProductAccess = link
     ? link.productAccess.map((config) => cloneProductConfig(config))
     : [];
+  const refreshedOrg = await getOrganization(orgId);
+  const memberRecord = refreshedOrg?.members.find((m) => m.userId === user.id);
+  const maskCosts = !(refreshedOrg?.isMaster ?? false);
+  const usage = (memberRecord?.usage ?? []).map((entry) => ({
+    ...entry,
+    tokenCost: maskCosts ? null : entry.tokenCost,
+  }));
 
   res.json({
     user: {
       ...toSafeUser(user),
       roles: requestedRoles,
       productAccess: safeProductAccess,
+      usage,
+      lastAccessed: memberRecord?.lastAccessed ?? null,
     },
     generatedPassword,
     isNewUser,

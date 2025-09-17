@@ -131,6 +131,12 @@ export async function attachUserToOrganization(params: {
     membership.roles = params.roles;
     membership.status = "active";
     membership.productAccess = memberProducts;
+    if (!Array.isArray(membership.usage)) {
+      membership.usage = [];
+    }
+    if (membership.lastAccessed === undefined) {
+      membership.lastAccessed = null;
+    }
   } else {
     org.members.push({
       userId: params.userId,
@@ -139,6 +145,8 @@ export async function attachUserToOrganization(params: {
       joinedAt: now(),
       status: "active",
       productAccess: memberProducts,
+      usage: [],
+      lastAccessed: null,
     });
   }
 
@@ -217,6 +225,12 @@ export async function createOrUpdateOrgUser(params: {
     membership.roles = params.roles;
     membership.status = "active";
     membership.productAccess = memberProducts;
+    if (!Array.isArray(membership.usage)) {
+      membership.usage = [];
+    }
+    if (membership.lastAccessed === undefined) {
+      membership.lastAccessed = null;
+    }
   } else {
     org.members.push({
       userId: user.id,
@@ -225,6 +239,8 @@ export async function createOrUpdateOrgUser(params: {
       joinedAt: now(),
       status: "active",
       productAccess: memberProducts,
+      usage: [],
+      lastAccessed: null,
     });
   }
 

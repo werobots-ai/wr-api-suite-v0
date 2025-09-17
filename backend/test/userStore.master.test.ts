@@ -184,12 +184,28 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
     action: "unit-test",
     requests: 3,
   });
+  await recordUsage({
+    orgId: organization.id,
+    tokenCost: 5,
+    billedCost: 10,
+    action: "ui-test",
+    requests: 2,
+    userId: update.user.id,
+    metadata: { source: "ui", userId: update.user.id },
+  });
 
   const store = await getIdentityStore();
   const storedOrg = store.organizations[organization.id];
-  assert.equal(storedOrg.credits, 85);
-  assert.equal(storedOrg.usage.length, 2);
-  assert.equal(storedOrg.usage.at(-1)?.action, "unit-test");
+  assert.equal(storedOrg.credits, 75);
+  assert.equal(storedOrg.usage.length, 3);
+  assert.equal(storedOrg.usage.at(-1)?.action, "ui-test");
+  const memberUsage = storedOrg.members.find(
+    (member) => member.userId === update.user.id,
+  );
+  assert.ok(memberUsage);
+  assert.equal(memberUsage?.usage.length, 1);
+  assert.equal(memberUsage?.usage[0].action, "ui-test");
+  assert.equal(memberUsage?.lastAccessed, memberUsage?.usage[0].timestamp);
 
   const members = await getUsersForOrganization(organization.id);
   assert.equal(members.length, 2);

@@ -9,6 +9,7 @@ import {
   QAResult,
 } from "@/types/Questions";
 import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useRouter } from "next/router";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
 import { useAuth } from "@/context/AuthContext";
 
@@ -37,12 +38,23 @@ const QuestionSetPage: React.FC<
   const { questionSet, setQuestionSet, isSaved, setIsSaved, setSnippets } =
     props;
   const { token, activeOrgId, documentAccess, loading: authLoading } = useAuth();
+  const router = useRouter();
   const canCreateQuestions = Boolean(
     documentAccess?.permissions.createQuestionSet,
   );
   const canEvaluateDocuments = Boolean(
     documentAccess?.permissions.evaluateDocument,
   );
+  useEffect(() => {
+    if (authLoading) return;
+    if (!token) {
+      router.replace("/auth/dev-login");
+      return;
+    }
+    if (!canCreateQuestions || !canEvaluateDocuments) {
+      router.replace("/account/billing");
+    }
+  }, [authLoading, token, canCreateQuestions, canEvaluateDocuments, router]);
   const buildAuthHeaders = useCallback(() => {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -306,20 +318,8 @@ const QuestionSetPage: React.FC<
     );
   }
 
-  if (!token) {
-    return (
-      <main className="container">
-        <p>You must log in to manage question sets.</p>
-      </main>
-    );
-  }
-
-  if (!canCreateQuestions || !canEvaluateDocuments) {
-    return (
-      <main className="container">
-        <p>You do not have permission to manage this product.</p>
-      </main>
-    );
+  if (!token || !canCreateQuestions || !canEvaluateDocuments) {
+    return null;
   }
 
   return (

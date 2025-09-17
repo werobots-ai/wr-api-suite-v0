@@ -67,10 +67,18 @@ export function toSafeOrganization(
     keySets: org.keySets.map((set) => toSafeKeySet(set, options)),
     billingProfile: org.billingProfile,
     members: org.members.map((member) => ({
-      ...member,
+      userId: member.userId,
+      roles: member.roles,
+      invitedAt: member.invitedAt,
+      joinedAt: member.joinedAt,
+      status: member.status,
       productAccess: member.productAccess.map((config) =>
         cloneProductConfig(config),
       ),
+      usage: (member.usage ?? []).map((entry) =>
+        toSafeUsageEntry(entry, options),
+      ),
+      lastAccessed: member.lastAccessed ?? null,
     })),
     createdAt: org.createdAt,
     createdBy: org.createdBy,

@@ -44,6 +44,8 @@ export type OrgMember = {
   joinedAt: string;
   status: "active" | "invited" | "suspended";
   productAccess: ProductKeyConfig[];
+  usage: UsageEntry[];
+  lastAccessed: string | null;
 };
 
 export type SafeOrganization = {

@@ -1,37 +1,74 @@
 import { useState } from "react";
 
-export type UsageEntry = {
-  timestamp: string;
-  action: string;
-  tokenCost: number | null;
-  billedCost: number;
-  requests: number;
-  question?: string;
-};
+import type { UsageEntry } from "@/types/account";
+
+function resolveOrigin(entry: UsageEntry): string {
+  const metadata = entry.metadata ?? {};
+  const source = typeof (metadata as { source?: unknown }).source === "string"
+    ? (metadata as { source?: string }).source
+    : null;
+  if (source === "ui") {
+    const email =
+      typeof (metadata as { userEmail?: unknown }).userEmail === "string"
+        ? (metadata as { userEmail?: string }).userEmail
+        : null;
+    const userId =
+      typeof (metadata as { userId?: unknown }).userId === "string"
+        ? (metadata as { userId?: string }).userId
+        : null;
+    return email || userId || "UI session";
+  }
+  if (source === "api") {
+    const keyId =
+      typeof (metadata as { keyId?: unknown }).keyId === "string"
+        ? (metadata as { keyId?: string }).keyId
+        : null;
+    const keySetId =
+      typeof (metadata as { keySetId?: unknown }).keySetId === "string"
+        ? (metadata as { keySetId?: string }).keySetId
+        : null;
+    if (keyId) return `API key ${keyId}`;
+    if (keySetId) return `API key set ${keySetId}`;
+    return "API";
+  }
+  if (source) {
+    return source;
+  }
+  return "organization";
+}
 
 export default function UsageBreakdown({
   entries,
   showCostColumns = true,
+  summaryLabel = "Usage Events",
+  showOriginColumn = true,
 }: {
   entries: UsageEntry[];
   showCostColumns?: boolean;
+  summaryLabel?: string;
+  showOriginColumn?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const filtered = entries.filter(
-    (e) =>
-      e.action.toLowerCase().includes(filter.toLowerCase()) ||
-      (e.question || "").toLowerCase().includes(filter.toLowerCase()),
+    (e) => {
+      const origin = resolveOrigin(e);
+      return (
+        e.action.toLowerCase().includes(filter.toLowerCase()) ||
+        (e.question || "").toLowerCase().includes(filter.toLowerCase()) ||
+        origin.toLowerCase().includes(filter.toLowerCase())
+      );
+    },
   );
   return (
     <details>
       <summary>
-        Usage Events ({entries.length})
+        {summaryLabel} ({entries.length})
       </summary>
       <input
         type="text"
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
-        placeholder="Filter by question or action"
+        placeholder="Filter by action, origin, or question"
         className="filter"
       />
       <table>
@@ -39,6 +76,7 @@ export default function UsageBreakdown({
           <tr>
             <th>Time</th>
             <th>Action</th>
+            {showOriginColumn && <th>Origin</th>}
             <th>Question</th>
             <th>Billed ($)</th>
             {showCostColumns && <th>OpenAI ($)</th>}
@@ -50,10 +88,12 @@ export default function UsageBreakdown({
           {filtered.map((e, i) => {
             const net =
               showCostColumns && e.tokenCost !== null ? e.billedCost - e.tokenCost : null;
+            const origin = resolveOrigin(e);
             return (
               <tr key={i}>
                 <td>{new Date(e.timestamp).toLocaleString()}</td>
                 <td>{e.action}</td>
+                {showOriginColumn && <td>{origin}</td>}
                 <td>{e.question || "-"}</td>
                 <td title={`$${e.billedCost}`}>{e.billedCost.toFixed(2)}</td>
                 {showCostColumns && (

@@ -99,6 +99,8 @@ export async function createOrganizationWithOwner(
         productAccess: ownerProductAccess.map((config) =>
           cloneProductConfig(config),
         ),
+        usage: [],
+        lastAccessed: null,
       },
     ],
     billingProfile: {
@@ -179,6 +181,7 @@ export async function recordUsage(params: {
   keySetId?: string;
   keyId?: string;
   metadata?: Record<string, unknown>;
+  userId?: string;
 }): Promise<void> {
   const store = await loadIdentity();
   const org = store.organizations[params.orgId];
@@ -193,6 +196,19 @@ export async function recordUsage(params: {
     metadata: params.metadata,
   };
   org.usage.push(entry);
+
+  if (params.userId) {
+    const membership = org.members.find(
+      (member) => member.userId === params.userId,
+    );
+    if (membership) {
+      if (!Array.isArray(membership.usage)) {
+        membership.usage = [];
+      }
+      membership.usage.push(entry);
+      membership.lastAccessed = entry.timestamp;
+    }
+  }
 
   if (params.keySetId && params.keyId) {
     const keySet = org.keySets.find((ks) => ks.id === params.keySetId);

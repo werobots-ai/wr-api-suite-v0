@@ -245,14 +245,16 @@ router.post("/", express.json(), async (req, res) => {
       })
     );
 
-    const { orgId, keySetId, keyId, userId, usageSource } = res.locals as {
+    const { orgId, keySetId, keyId, userId, usageSource, user } = res.locals as {
       orgId: string;
       keySetId?: string;
       keyId?: string;
       userId?: string;
       usageSource?: string;
+      user?: { email?: string };
     };
     const source = usageSource === "ui" ? "ui" : "api";
+    const userEmail = user?.email;
 
     await saveQuestionSet(orgId, {
       originalUserInput: changeRequest,
@@ -282,8 +284,9 @@ router.post("/", express.json(), async (req, res) => {
       keyId,
       metadata:
         source === "ui"
-          ? { source, userId }
+          ? { source, userId, userEmail }
           : { source, keySetId, keyId },
+      userId: source === "ui" ? userId : undefined,
     });
 
     sendLog(`DONE.`);

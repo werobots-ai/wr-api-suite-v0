@@ -40,6 +40,8 @@ function normalizeIdentity(store: IdentityStoreData): IdentityStoreData {
         productAccess: normalizeProductConfigs(member.productAccess, {
           ensureDocument: true,
         }),
+        usage: Array.isArray(member.usage) ? member.usage : [],
+        lastAccessed: member.lastAccessed ?? null,
       }));
       return [
         id,

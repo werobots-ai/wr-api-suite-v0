@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { QAResult, Question, QuestionSet } from "@/types/Questions";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -13,9 +14,20 @@ export default function SnippetsPage(props: {
   const { snippets, setSnippets } = props;
   const { token, activeOrgId, documentAccess, loading: authLoading } =
     useAuth();
+  const router = useRouter();
   const canEvaluateDocuments = Boolean(
     documentAccess?.permissions.evaluateDocument,
   );
+  useEffect(() => {
+    if (authLoading) return;
+    if (!token) {
+      router.replace("/auth/dev-login");
+      return;
+    }
+    if (!canEvaluateDocuments) {
+      router.replace("/account/billing");
+    }
+  }, [authLoading, token, canEvaluateDocuments, router]);
   const buildAuthHeaders = useCallback(() => {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -405,20 +417,8 @@ export default function SnippetsPage(props: {
     );
   }
 
-  if (!token) {
-    return (
-      <main className="container">
-        <p>You must log in to process snippets.</p>
-      </main>
-    );
-  }
-
-  if (!canEvaluateDocuments) {
-    return (
-      <main className="container">
-        <p>You do not have permission to evaluate snippets.</p>
-      </main>
-    );
+  if (!token || !canEvaluateDocuments) {
+    return null;
   }
 
   return (
