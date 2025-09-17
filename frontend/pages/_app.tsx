@@ -3,7 +3,6 @@ import Head from "next/head";
 import { AppProps } from "next/app";
 import Link from "next/link";
 import { useState } from "react";
-import ApiKeyModal from "@/components/ApiKeyModal";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SafeOrganization } from "@/types/account";
 
@@ -18,7 +17,6 @@ function InnerApp({ Component, pageProps }: AppProps) {
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <meta name="theme-color" content="#0F1D3B" />
       </Head>
-      <ApiKeyModal />
       <Navigation questionSet={questionSet} snippets={snippets} />
       <main className="app-content">
         <Component
@@ -130,15 +128,19 @@ function Navigation({
     setActiveOrg,
     logout,
     loading,
+    documentAccess,
   } = useAuth();
+  const canUseDocuments = Boolean(
+    documentAccess && documentAccess.permissions.evaluateDocument,
+  );
   const hasPlatformAccess = Boolean(
     user?.globalRoles.some((role) => role === "SYSADMIN" || role === "MASTER_ADMIN"),
   );
   return (
     <nav className="app-nav">
       <div className="nav-links">
-        <Link href="/questions">Questions</Link>
-        {questionSet && (
+        {canUseDocuments && <Link href="/questions">Questions</Link>}
+        {canUseDocuments && questionSet && (
           <>
             <span>|</span>
             <Link href="/snippets">

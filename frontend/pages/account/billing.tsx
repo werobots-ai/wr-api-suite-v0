@@ -22,7 +22,12 @@ type Pricing = {
   questionAnswering: number;
 };
 
-type MemberInfo = SafeUser & { roles: OrgRole[] };
+type MemberInfo = SafeUser & {
+  roles: OrgRole[];
+  productAccess: ProductKeyConfig[];
+  usage: UsageEntry[];
+  lastAccessed: string | null;
+};
 
 type KeyReveal = {
   keys: string[];
@@ -96,8 +101,12 @@ export default function BillingPage() {
     roles: ["MEMBER"] as OrgRole[],
     password: "",
   });
+  const [memberProducts, setMemberProducts] = useState<ProductKeyConfig[]>(() =>
+    buildInitialProducts(),
+  );
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
   const [memberError, setMemberError] = useState<string | null>(null);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
 
   useEffect(() => {
     setNewSet((current) => {
@@ -109,6 +118,18 @@ export default function BillingPage() {
         return cloneProductConfig(existing ?? config);
       });
       return { ...current, products: merged };
+    });
+  }, [buildInitialProducts]);
+
+  useEffect(() => {
+    setMemberProducts((current) => {
+      const baseline = buildInitialProducts();
+      const merged = baseline.map((config) => {
+        const existing = current.find((p) => p.productId === config.productId);
+        const source = existing ?? config;
+        return cloneProductConfig(source);
+      });
+      return merged;
     });
   }, [buildInitialProducts]);
 
@@ -133,6 +154,27 @@ export default function BillingPage() {
     [buildInitialProducts],
   );
 
+  const updateMemberProductConfig = useCallback(
+    (
+      productId: string,
+      updater: (config: ProductKeyConfig) => ProductKeyConfig,
+    ) => {
+      setMemberProducts((current) => {
+        const baseline = buildInitialProducts();
+        const merged = baseline.map((config) => {
+          const existing = current.find(
+            (p) => p.productId === config.productId,
+          );
+          const source = existing ?? config;
+          const next = source.productId === productId ? updater(source) : source;
+          return cloneProductConfig(next);
+        });
+        return merged;
+      });
+    },
+    [buildInitialProducts],
+  );
+
   const canManageKeys = Boolean(permissions?.manageKeys);
   const canManageBilling = Boolean(permissions?.manageBilling);
   const canManageUsers = Boolean(permissions?.manageUsers);
@@ -147,6 +189,15 @@ export default function BillingPage() {
     (product) => product.productId === INSIGHTS_SANDBOX_PRODUCT_ID,
   );
   const apiProductConfig = newSet.products.find(
+    (product) => product.productId === API_PLATFORM_PRODUCT_ID,
+  );
+  const memberDocumentProduct = memberProducts.find(
+    (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+  );
+  const memberInsightsProduct = memberProducts.find(
+    (product) => product.productId === INSIGHTS_SANDBOX_PRODUCT_ID,
+  );
+  const memberApiProduct = memberProducts.find(
     (product) => product.productId === API_PLATFORM_PRODUCT_ID,
   );
   const renderProductSummary = (product: ProductKeyConfig) => {
@@ -276,7 +327,13 @@ export default function BillingPage() {
     });
   };
 
-  const handleCreateMember = async () => {
+  const resetMemberForm = useCallback(() => {
+    setMemberForm({ email: "", name: "", roles: ["MEMBER"], password: "" });
+    setMemberProducts(buildInitialProducts());
+    setEditingMemberId(null);
+  }, [buildInitialProducts]);
+
+  const handleSaveMember = async () => {
     if (!canManageUsers) return;
     if (!memberForm.email || !memberForm.name) {
       setMemberError("Name and email are required");
@@ -300,17 +357,35 @@ export default function BillingPage() {
         name: memberForm.name,
         roles: memberForm.roles,
         password: memberForm.password || undefined,
+        productAccess: memberProducts,
       }),
     });
-    setMemberForm({ email: "", name: "", roles: ["MEMBER"], password: "" });
+    resetMemberForm();
     await loadMembers();
     if (response.generatedPassword) {
       setMemberMessage(
         `Generated password for ${response.user.email}: ${response.generatedPassword}. Share securely with the user.`,
       );
+    } else if (editingMemberId) {
+      setMemberMessage("User updated. Permissions refreshed.");
     } else {
       setMemberMessage("User saved. They can now access the organization.");
     }
+  };
+
+  const handleEditMember = (member: MemberInfo) => {
+    setEditingMemberId(member.id);
+    setMemberForm({
+      email: member.email,
+      name: member.name,
+      roles: member.roles.length ? [...member.roles] : ["MEMBER"],
+      password: "",
+    });
+    setMemberProducts(
+      member.productAccess.map((config) => cloneProductConfig(config)),
+    );
+    setMemberMessage(null);
+    setMemberError(null);
   };
 
   const organizationUsage = useMemo<UsageEntry[]>(
@@ -815,7 +890,11 @@ export default function BillingPage() {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Roles</th>
+                    <th>Product access</th>
                     <th>Last login</th>
+                    <th>Last UI usage</th>
+                    <th>UI usage</th>
+                    {canManageUsers && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -825,10 +904,49 @@ export default function BillingPage() {
                       <td>{member.email}</td>
                       <td>{member.roles.join(", ")}</td>
                       <td>
+                        <ul className="product-list">
+                          {member.productAccess.map((product) => (
+                            <li key={product.productId}>
+                              <strong>{resolveProductName(product.productId)}:</strong>{" "}
+                              {renderProductSummary(product)}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td>
                         {member.lastLoginAt
                           ? new Date(member.lastLoginAt).toLocaleString()
                           : "Never"}
                       </td>
+                      <td>
+                        {member.lastAccessed
+                          ? new Date(member.lastAccessed).toLocaleString()
+                          : "Never"}
+                      </td>
+                      <td>
+                        {member.usage.length ? (
+                          <UsageBreakdown
+                            entries={member.usage}
+                            showCostColumns={canViewInternalCosts}
+                            summaryLabel={`UI usage — ${member.usage.reduce(
+                              (count, entry) => count + entry.requests,
+                              0,
+                            )} req / $${member.usage
+                              .reduce((sum, entry) => sum + entry.billedCost, 0)
+                              .toFixed(2)}`}
+                            showOriginColumn={false}
+                          />
+                        ) : (
+                          <span>No UI usage yet</span>
+                        )}
+                      </td>
+                      {canManageUsers && (
+                        <td>
+                          <button type="button" onClick={() => handleEditMember(member)}>
+                            Configure access
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -836,6 +954,12 @@ export default function BillingPage() {
               {canManageUsers && (
                 <div className="member-form">
                   <h3>Add or update member</h3>
+                  {editingMemberId && (
+                    <p className="hint">
+                      Editing permissions for <strong>{memberForm.email}</strong>.
+                      Email cannot be changed while updating an existing account.
+                    </p>
+                  )}
                   <div className="form-grid">
                     <label>
                       Name
@@ -847,7 +971,7 @@ export default function BillingPage() {
                         }
                       />
                     </label>
-                    <label>
+                      <label>
                       Email
                       <input
                         type="email"
@@ -855,6 +979,7 @@ export default function BillingPage() {
                         onChange={(e) =>
                           setMemberForm({ ...memberForm, email: e.target.value })
                         }
+                        disabled={Boolean(editingMemberId)}
                       />
                     </label>
                     <label>
@@ -883,7 +1008,176 @@ export default function BillingPage() {
                       ))}
                     </div>
                   </fieldset>
-                  <button onClick={handleCreateMember}>Save member</button>
+                  <fieldset className="product-fieldset">
+                    <legend>Product access</legend>
+                    {memberDocumentProduct &&
+                      isDocumentAnalysisConfig(memberDocumentProduct) && (
+                        <div className="product-options">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={memberDocumentProduct.permissions.createQuestionSet}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  DOCUMENT_ANALYSIS_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isDocumentAnalysisConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      permissions: {
+                                        ...config.permissions,
+                                        createQuestionSet: e.target.checked,
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            />
+                            Create question sets
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={memberDocumentProduct.permissions.evaluateDocument}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  DOCUMENT_ANALYSIS_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isDocumentAnalysisConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      permissions: {
+                                        ...config.permissions,
+                                        evaluateDocument: e.target.checked,
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            />
+                            Evaluate documents
+                          </label>
+                        </div>
+                      )}
+                    {memberInsightsProduct &&
+                      isInsightsSandboxConfig(memberInsightsProduct) && (
+                        <div className="product-options">
+                          <label>
+                            Access level
+                            <select
+                              value={memberInsightsProduct.options.accessLevel}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  INSIGHTS_SANDBOX_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isInsightsSandboxConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      options: {
+                                        ...config.options,
+                                        accessLevel: e.target.value as
+                                          | "none"
+                                          | "read"
+                                          | "write",
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            >
+                              <option value="none">No access</option>
+                              <option value="read">Read</option>
+                              <option value="write">Write</option>
+                            </select>
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={memberInsightsProduct.options.betaFeatures}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  INSIGHTS_SANDBOX_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isInsightsSandboxConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      options: {
+                                        ...config.options,
+                                        betaFeatures: e.target.checked,
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            />
+                            Enable beta features
+                          </label>
+                        </div>
+                      )}
+                    {memberApiProduct &&
+                      isApiPlatformConfig(memberApiProduct) && (
+                        <div className="product-options">
+                          <label>
+                            Environment
+                            <select
+                              value={memberApiProduct.options.environment}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  API_PLATFORM_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isApiPlatformConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      options: {
+                                        ...config.options,
+                                        environment: e.target.value as
+                                          | "sandbox"
+                                          | "production",
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            >
+                              <option value="sandbox">Sandbox</option>
+                              <option value="production">Production</option>
+                            </select>
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={memberApiProduct.options.allowModelTraining}
+                              onChange={(e) =>
+                                updateMemberProductConfig(
+                                  API_PLATFORM_PRODUCT_ID,
+                                  (config) => {
+                                    if (!isApiPlatformConfig(config)) return config;
+                                    return {
+                                      ...config,
+                                      options: {
+                                        ...config.options,
+                                        allowModelTraining: e.target.checked,
+                                      },
+                                    };
+                                  },
+                                )
+                              }
+                            />
+                            Allow model training
+                          </label>
+                        </div>
+                      )}
+                  </fieldset>
+                  <div className="member-actions">
+                    <button onClick={handleSaveMember}>
+                      {editingMemberId ? "Update member" : "Save member"}
+                    </button>
+                    {editingMemberId && (
+                      <button type="button" className="secondary" onClick={resetMemberForm}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </section>
@@ -1197,6 +1491,36 @@ export default function BillingPage() {
           padding: 0.5rem;
           border: 1px solid #d9d9d9;
           border-radius: 4px;
+        }
+        .product-fieldset {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .product-list {
+          margin: 0;
+          padding-left: 1.25rem;
+          list-style: disc;
+        }
+        .product-list li {
+          margin-bottom: 0.25rem;
+        }
+        .product-options {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .member-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+        .member-actions .secondary {
+          background: #fff;
+          color: #333;
+          border: 1px solid #d9d9d9;
+        }
+        .member-actions .secondary:hover {
+          background: #fafafa;
         }
         fieldset {
           border: 1px solid #d9d9d9;

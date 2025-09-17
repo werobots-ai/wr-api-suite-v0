@@ -66,7 +66,20 @@ export function toSafeOrganization(
     usage: org.usage.map((entry) => toSafeUsageEntry(entry, options)),
     keySets: org.keySets.map((set) => toSafeKeySet(set, options)),
     billingProfile: org.billingProfile,
-    members: org.members,
+    members: org.members.map((member) => ({
+      userId: member.userId,
+      roles: member.roles,
+      invitedAt: member.invitedAt,
+      joinedAt: member.joinedAt,
+      status: member.status,
+      productAccess: member.productAccess.map((config) =>
+        cloneProductConfig(config),
+      ),
+      usage: (member.usage ?? []).map((entry) =>
+        toSafeUsageEntry(entry, options),
+      ),
+      lastAccessed: member.lastAccessed ?? null,
+    })),
     createdAt: org.createdAt,
     createdBy: org.createdBy,
   };
@@ -78,7 +91,12 @@ export function toSafeUser(user: UserAccount) {
     email: user.email,
     name: user.name,
     globalRoles: user.globalRoles,
-    organizations: user.organizations,
+    organizations: user.organizations.map((link) => ({
+      ...link,
+      productAccess: link.productAccess.map((config) =>
+        cloneProductConfig(config),
+      ),
+    })),
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     status: user.status,

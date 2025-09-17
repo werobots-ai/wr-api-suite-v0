@@ -5,8 +5,6 @@ export async function fetchJSON<T>(
 ): Promise<T> {
   const headers = new Headers(opts?.headers || {});
   if (typeof window !== "undefined") {
-    const apiKey = localStorage.getItem("apiKey");
-    if (apiKey) headers.set("x-api-key", apiKey);
     const token = localStorage.getItem("wr_auth_token");
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const orgId = localStorage.getItem("wr_active_org");
