@@ -245,7 +245,11 @@ router.post("/", express.json(), async (req, res) => {
       })
     );
 
-    const { orgId } = res.locals as { orgId: string };
+    const { orgId, keySetId, keyId } = res.locals as {
+      orgId: string;
+      keySetId?: string;
+      keyId?: string;
+    };
 
     await saveQuestionSet(orgId, {
       originalUserInput: changeRequest,
@@ -261,11 +265,6 @@ router.post("/", express.json(), async (req, res) => {
 
     sendEvent("loadQuestionSet", { questionSetId: id });
 
-    const { orgId, keySetId, keyId } = res.locals as {
-      orgId: string;
-      keySetId: string;
-      keyId: string;
-    };
     const questionCount = finalizedFields.length;
     const billed = questionCount * pricing.questionGeneration;
     const requests = questionCount + 3; // reasoner + guidance + plan + per question finalizer
