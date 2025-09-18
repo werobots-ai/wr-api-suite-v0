@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useId } from "react";
+import { MouseEvent, ReactNode, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 
 interface ConfirmModalProps {
@@ -56,8 +56,14 @@ export default function ConfirmModal({
     return null;
   }
 
+  const handleOverlayClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onCancel();
+    }
+  };
+
   return createPortal(
-    <div className="overlay" role="presentation" onClick={onCancel}>
+    <div className="overlay" role="presentation" onClick={handleOverlayClick}>
       <div
         role="dialog"
         aria-modal="true"
