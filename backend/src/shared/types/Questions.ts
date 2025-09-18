@@ -91,6 +91,20 @@ export type Question =
   | ListQuestion
   | OpenEndedQuestion;
 
+export type QuestionSetStatus = "draft" | "active" | "inactive";
+
+export type QuestionSetActor =
+  | {
+      type: "user";
+      id: string;
+      label?: string | null;
+    }
+  | {
+      type: "apiKey";
+      id: string;
+      label?: string | null;
+    };
+
 export interface QuestionSet {
   id: string;
   executionPlan: string;
@@ -100,6 +114,12 @@ export interface QuestionSet {
   qaResults: QAResult[];
   title: string;
   originalUserInput: string; // Original user input that triggered this question set
+  status: QuestionSetStatus;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt: string | null;
+  createdBy: QuestionSetActor | null;
+  lastModifiedBy: QuestionSetActor | null;
 }
 
 /**

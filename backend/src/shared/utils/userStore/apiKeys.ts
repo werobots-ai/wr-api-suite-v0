@@ -48,6 +48,8 @@ export function createDefaultKeySet(actorId: string): KeySet {
     products: [
       createDefaultDocumentAnalysisConfig({
         createQuestionSet: true,
+        editQuestionSet: true,
+        manageQuestionSetActivation: true,
         evaluateDocument: true,
       }),
     ],

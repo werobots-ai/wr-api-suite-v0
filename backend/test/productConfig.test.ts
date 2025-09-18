@@ -26,6 +26,11 @@ test("default product config helpers coerce overrides", () => {
   });
   assert.equal(documentConfig.productId, DOCUMENT_ANALYSIS_PRODUCT_ID);
   assert.equal(documentConfig.permissions.createQuestionSet, true);
+  assert.equal(documentConfig.permissions.editQuestionSet, false);
+  assert.equal(
+    documentConfig.permissions.manageQuestionSetActivation,
+    false,
+  );
   assert.equal(documentConfig.permissions.evaluateDocument, false);
   assert.equal(isDocumentAnalysisConfig(documentConfig), true);
 
@@ -54,7 +59,7 @@ test("normalizeProductConfigs deduplicates and fills defaults", () => {
   const normalized = normalizeProductConfigs([
     {
       productId: DOCUMENT_ANALYSIS_PRODUCT_ID,
-      permissions: { createQuestionSet: "yes" },
+      permissions: { createQuestionSet: "yes", editQuestionSet: 1 },
     },
     {
       productId: DOCUMENT_ANALYSIS_PRODUCT_ID,
@@ -84,6 +89,8 @@ test("normalizeProductConfigs deduplicates and fills defaults", () => {
   assert.equal(isDocumentAnalysisConfig(document), true);
   if (isDocumentAnalysisConfig(document)) {
     assert.equal(document.permissions.createQuestionSet, true);
+    assert.equal(document.permissions.editQuestionSet, true);
+    assert.equal(document.permissions.manageQuestionSetActivation, false);
     assert.equal(document.permissions.evaluateDocument, false);
   }
 
@@ -129,6 +136,8 @@ test("normalizeProductConfigs adds document analysis when missing", () => {
   assert.equal(isDocumentAnalysisConfig(document), true);
   if (isDocumentAnalysisConfig(document)) {
     assert.equal(document.permissions.createQuestionSet, true);
+    assert.equal(document.permissions.editQuestionSet, true);
+    assert.equal(document.permissions.manageQuestionSetActivation, true);
     assert.equal(document.permissions.evaluateDocument, true);
   }
 });
@@ -146,6 +155,11 @@ test("getProductCatalog returns deep clones of definitions", () => {
   assert.equal(isDocumentAnalysisConfig(secondDefault), true);
   if (isDocumentAnalysisConfig(secondDefault)) {
     assert.equal(secondDefault.permissions.createQuestionSet, false);
+    assert.equal(secondDefault.permissions.editQuestionSet, false);
+    assert.equal(
+      secondDefault.permissions.manageQuestionSetActivation,
+      false,
+    );
   }
 
   const catalogDefault = PRODUCT_CATALOG[0].defaultConfig;
@@ -153,5 +167,10 @@ test("getProductCatalog returns deep clones of definitions", () => {
   assert.equal(isDocumentAnalysisConfig(catalogDefault), true);
   if (isDocumentAnalysisConfig(catalogDefault)) {
     assert.equal(catalogDefault.permissions.createQuestionSet, false);
+    assert.equal(catalogDefault.permissions.editQuestionSet, false);
+    assert.equal(
+      catalogDefault.permissions.manageQuestionSetActivation,
+      false,
+    );
   }
 });

@@ -26,6 +26,10 @@ function coerceDocumentPermissions(
   const permissions = input.permissions ?? {};
   return {
     createQuestionSet: Boolean(permissions.createQuestionSet),
+    editQuestionSet: Boolean(permissions.editQuestionSet),
+    manageQuestionSetActivation: Boolean(
+      permissions.manageQuestionSetActivation,
+    ),
     evaluateDocument: Boolean(permissions.evaluateDocument),
   };
 }
@@ -157,6 +161,8 @@ export function normalizeProductConfigs(
     normalized.push(
       createDefaultDocumentAnalysisConfig({
         createQuestionSet: true,
+        editQuestionSet: true,
+        manageQuestionSetActivation: true,
         evaluateDocument: true,
       }),
     );

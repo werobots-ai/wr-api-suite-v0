@@ -14,13 +14,21 @@ export default function SnippetsPage(props: {
   snippets: Record<string, QAResult>;
   setSnippets: React.Dispatch<React.SetStateAction<Record<string, QAResult>>>;
 }) {
-  const { snippets, setSnippets } = props;
+  const { questionSet, snippets, setSnippets } = props;
   const { token, activeOrgId, documentAccess, loading: authLoading } =
     useAuth();
   const router = useRouter();
   const canEvaluateDocuments = Boolean(
     documentAccess?.permissions.evaluateDocument,
   );
+  const isQuestionSetActive = questionSet?.status === "active";
+  const activationWarningMessage = questionSet
+    ? questionSet.status === "draft"
+      ? "This question set is still a draft. Finalize it on the Questions page before evaluating snippets."
+      : questionSet.status === "inactive"
+      ? "This question set is inactive. Activate it on the Questions page before evaluating snippets."
+      : null
+    : null;
   useEffect(() => {
     if (authLoading) return;
     if (!token) {
@@ -60,15 +68,29 @@ export default function SnippetsPage(props: {
   const [hasDropped, setHasDropped] = useState(initialHasDropped);
 
   useEffect(() => {
-    if (!props.questionSet) {
+    if (!questionSet) {
       window.location.href = "/questions";
     }
-  }, [props.questionSet]);
+  }, [questionSet]);
+
+  useEffect(() => {
+    if (!isQuestionSetActive) {
+      setHasDropped(false);
+    }
+  }, [isQuestionSetActive]);
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleBrowse = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
+    if (!isQuestionSetActive) {
+      const warning =
+        activationWarningMessage ??
+        "Select an active question set before evaluating snippets.";
+      setLogs((prev) => [...prev, warning]);
+      e.target.value = "";
+      return;
+    }
     setHasDropped(true);
     setSnippets({});
     setLogs([]);
@@ -90,7 +112,7 @@ export default function SnippetsPage(props: {
     }
     const headers: Record<string, string> = {
       ...buildAuthHeaders(),
-      ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
+      ...(questionSet ? { questionSetId: questionSet.id } : {}),
     };
     try {
       const res = await fetch(`${API_URL}/api/upload`, {
@@ -204,7 +226,7 @@ export default function SnippetsPage(props: {
       const conv = {
         files: [...existing.files],
         snippetId: convId,
-        questionSetId: existing.questionSetId,
+        questionSetId: existing.questionSetId || questionSet?.id,
         logs: existing.logs || [],
         answers: { ...existing.answers },
         metrics: existing.metrics || {
@@ -307,6 +329,13 @@ export default function SnippetsPage(props: {
 
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    if (!isQuestionSetActive) {
+      const warning =
+        activationWarningMessage ??
+        "Select an active question set before evaluating snippets.";
+      setLogs((prev) => [...prev, warning]);
+      return;
+    }
     setHasDropped(true);
     // clear previous data
     setSnippets({});
@@ -363,9 +392,16 @@ export default function SnippetsPage(props: {
     }
 
     // Include questionSetId header if provided
+    if (!questionSet) {
+      setLogs((prev) => [
+        ...prev,
+        "Select an active question set before evaluating snippets.",
+      ]);
+      return;
+    }
     const headers: Record<string, string> = {
       ...buildAuthHeaders(),
-      ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
+      questionSetId: questionSet.id,
     };
     try {
       const res = await fetch(`${API_URL}/api/upload`, {
@@ -416,10 +452,15 @@ export default function SnippetsPage(props: {
 
   const handleOpenDrawer = (convId: string, questionText: string) => {
     const conv = snippets[convId];
+    if (!questionSet) return;
     const ans = conv.answers[questionText] || {};
-    const { questionId, shortQuestionText } = props.questionSet!.questions.find(
-      (q) => q.questionText === questionText
-    )!;
+    const match = questionSet.questions.find(
+      (q) => q.questionText === questionText,
+    );
+    if (!match) {
+      return;
+    }
+    const { questionId, shortQuestionText } = match;
     setDrawerData({
       shortQuestion: shortQuestionText,
       convId,
@@ -456,6 +497,10 @@ export default function SnippetsPage(props: {
     return null;
   }
 
+  if (!questionSet) {
+    return null;
+  }
+
   return (
     <>
       <Modal
@@ -479,14 +524,29 @@ export default function SnippetsPage(props: {
           onChange={handleBrowse}
         />
         <div
-          className={`panel dropzone ${hasDropped ? "dropped" : ""}`}
+          className={`panel dropzone ${hasDropped ? "dropped" : ""} ${
+            isQuestionSetActive ? "" : "disabled"
+          }`}
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
+          aria-disabled={!isQuestionSetActive}
         >
+          {!isQuestionSetActive && activationWarningMessage && (
+            <div className="activation-warning">{activationWarningMessage}</div>
+          )}
           Drag &amp; drop XLSX, TXT, or MD files or folders here, or&nbsp;
           <span
             className="browse"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              if (!isQuestionSetActive) {
+                const warning =
+                  activationWarningMessage ??
+                  "Select an active question set before evaluating snippets.";
+                setLogs((prev) => [...prev, warning]);
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
           >
             click to browse
           </span>
@@ -502,7 +562,7 @@ export default function SnippetsPage(props: {
             if (convEntries.length === 0) {
               return <p>No snippets yet.</p>;
             }
-            const questions = props.questionSet!.questions as Question[];
+            const questions = questionSet.questions as Question[];
 
             return (
               <table
@@ -762,6 +822,11 @@ export default function SnippetsPage(props: {
           min-height: 100px;
           border: 2px dashed #888;
         }
+        .dropzone.disabled {
+          cursor: not-allowed;
+          opacity: 0.6;
+          border-color: #ccc;
+        }
         .dropzone.dropped {
           width: 150px;
           height: 150px;
@@ -771,6 +836,15 @@ export default function SnippetsPage(props: {
           left: auto;
           z-index: 1;
           opacity: 0.8;
+        }
+        .activation-warning {
+          background: #fff4e6;
+          border: 1px solid #f0c987;
+          border-radius: 4px;
+          color: #8a5800;
+          margin-bottom: 0.75rem;
+          padding: 0.75rem 1rem;
+          text-align: left;
         }
         .results {
           opacity: 0;

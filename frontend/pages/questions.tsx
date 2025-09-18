@@ -3,12 +3,20 @@
 import {
   Question,
   QuestionSet,
+  QuestionSetStatus,
   QuestionType,
   QUESTION_TYPE_LABELS,
   ListQuestion,
   QAResult,
 } from "@/types/Questions";
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import { useRouter } from "next/router";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
 import Modal from "@/components/Modal";
@@ -26,6 +34,13 @@ const blankQuestionSet: QuestionSet = {
   executionPlan: "",
   executionPlanReasoning: "",
   qaResults: [] as QAResult[],
+  originalUserInput: "",
+  status: "draft",
+  createdAt: "",
+  updatedAt: "",
+  finalizedAt: null,
+  createdBy: null,
+  lastModifiedBy: null,
 };
 
 const QuestionSetPage: React.FC<
@@ -40,7 +55,8 @@ const QuestionSetPage: React.FC<
 > = (props) => {
   const { questionSet, setQuestionSet, isSaved, setIsSaved, setSnippets } =
     props;
-  const { token, activeOrgId, documentAccess, loading: authLoading } = useAuth();
+  const { token, activeOrgId, documentAccess, loading: authLoading, user } =
+    useAuth();
   const router = useRouter();
   const canCreateQuestions = Boolean(
     documentAccess?.permissions.createQuestionSet,
@@ -48,6 +64,125 @@ const QuestionSetPage: React.FC<
   const canEvaluateDocuments = Boolean(
     documentAccess?.permissions.evaluateDocument,
   );
+  const canEditExisting = Boolean(
+    documentAccess?.permissions.editQuestionSet,
+  );
+  const canManageActivation = Boolean(
+    documentAccess?.permissions.manageQuestionSetActivation,
+  );
+
+  const updateQuestionSetField = useCallback(
+    (updater: (prev: QuestionSet) => QuestionSet) => {
+      setQuestionSet((prev) => {
+        if (!prev) return prev;
+        const next = updater(prev);
+        if (next !== prev) {
+          setIsSaved(false);
+        }
+        return next;
+      });
+    },
+    [setQuestionSet, setIsSaved],
+  );
+
+  const isCurrentCreator = Boolean(
+    questionSet?.createdBy?.type === "user" &&
+      questionSet.createdBy.id === user?.id,
+  );
+
+  const canEditCurrentSet = Boolean(
+    questionSet &&
+      (questionSet.status === "draft"
+        ? isCurrentCreator || canEditExisting
+        : canEditExisting),
+  );
+
+  const canFinalizeDraft = Boolean(
+    questionSet &&
+      questionSet.status === "draft" &&
+      (canManageActivation || isCurrentCreator),
+  );
+  const statusLabelMap: Record<QuestionSetStatus, string> = {
+    draft: "Draft",
+    active: "Active",
+    inactive: "Inactive",
+  };
+  const statusDescription = useMemo(() => {
+    if (!questionSet) {
+      return "Select a question set to view its status.";
+    }
+    if (questionSet.status === "draft") {
+      return "Draft question sets, including newly generated ones, are inactive and cannot be used for snippet evaluation until they are finalized.";
+    }
+    if (questionSet.status === "inactive") {
+      return "Inactive question sets are preserved but not available for evaluation. Activate them to resume usage.";
+    }
+    return "Active question sets are available for snippet evaluation.";
+  }, [questionSet]);
+  const canToggleActivation = Boolean(
+    questionSet && questionSet.status !== "draft" && canManageActivation,
+  );
+  const isActive = questionSet?.status === "active";
+  const hasUnsavedChanges = Boolean(questionSet && !isSaved);
+  const updatedAt = questionSet?.updatedAt;
+  const formattedUpdatedAt = useMemo(() => {
+    if (!updatedAt) return null;
+    try {
+      return new Date(updatedAt).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    } catch {
+      return updatedAt;
+    }
+  }, [updatedAt]);
+  const finalizedAt = questionSet?.finalizedAt ?? null;
+  const formattedFinalizedAt = useMemo(() => {
+    if (!finalizedAt) return null;
+    try {
+      return new Date(finalizedAt).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    } catch {
+      return finalizedAt;
+    }
+  }, [finalizedAt]);
+  const confirmationContent = useMemo(() => {
+    if (!confirmation) return null;
+    switch (confirmation.type) {
+      case "save":
+        return {
+          title: "Save question set",
+          message:
+            "Saving will overwrite the stored question set with your current edits.",
+          confirmLabel: "Save changes",
+        } as const;
+      case "finalize":
+        return {
+          title: "Finalize question set",
+          message:
+            "Finalizing will activate this question set for snippet evaluation. It can no longer return to the draft state.",
+          confirmLabel: "Finalize set",
+        } as const;
+      case "activation":
+        return confirmation.nextActive
+          ? {
+              title: "Activate question set",
+              message:
+                "Activated question sets become available for snippet evaluation immediately.",
+              confirmLabel: "Activate set",
+            }
+          : {
+              title: "Deactivate question set",
+              message:
+                "Deactivated question sets will be hidden from snippet evaluation until they are activated again.",
+              confirmLabel: "Deactivate set",
+            };
+      default:
+        return null;
+    }
+  }, [confirmation]);
   useEffect(() => {
     if (authLoading) return;
     if (!token) {
@@ -73,9 +208,19 @@ const QuestionSetPage: React.FC<
   const [showModal, setShowModal] = useState(false);
   const [userInput, setUserInput] = useState("");
 
-  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(
-    null
+  const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(
+    null,
   );
+  const selectedQuestion = useMemo(() => {
+    if (!questionSet || selectedQuestionId === null) {
+      return null;
+    }
+    return (
+      questionSet.questions.find(
+        (question) => question.questionId === selectedQuestionId,
+      ) ?? null
+    );
+  }, [questionSet, selectedQuestionId]);
   const [editingDesc, setEditingDesc] = useState(false);
   const [editingPlan, setEditingPlan] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -95,10 +240,23 @@ const QuestionSetPage: React.FC<
       date: string;
       questionCount: number;
       snippetCount: number;
+      status: QuestionSetStatus;
+      createdAt: string;
+      updatedAt: string;
+      finalizedAt: string | null;
     }[]
   >([]);
   const [countdown, setCountdown] = useState<number>(0);
   const [timerCanceled, setTimerCanceled] = useState<boolean>(false);
+
+  type ConfirmationState =
+    | { type: "save" }
+    | { type: "finalize" }
+    | { type: "activation"; nextActive: boolean };
+  const [confirmation, setConfirmation] = useState<ConfirmationState | null>(
+    null,
+  );
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
 
   useEffect(() => {
     if (streamComplete) {
@@ -127,6 +285,14 @@ const QuestionSetPage: React.FC<
   const [focusedSetId, setFocusedSetId] = useState<string | null>(null);
   const [editingDetails, setEditingDetails] = useState(false);
 
+  useEffect(() => {
+    if (!canEditCurrentSet) {
+      setEditingDetails(false);
+      setEditingDesc(false);
+      setEditingPlan(false);
+    }
+  }, [canEditCurrentSet]);
+
   const listRef = useRef<HTMLDivElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -138,6 +304,22 @@ const QuestionSetPage: React.FC<
       }
     });
   }, [selectedQuestion?.description, selectedQuestion?.questionText]);
+
+  useEffect(() => {
+    if (!questionSet) {
+      setSelectedQuestionId(null);
+      return;
+    }
+    if (
+      selectedQuestionId === null ||
+      !questionSet.questions.some(
+        (question) => question.questionId === selectedQuestionId,
+      )
+    ) {
+      const firstQuestion = questionSet.questions[0];
+      setSelectedQuestionId(firstQuestion ? firstQuestion.questionId : null);
+    }
+  }, [questionSet, selectedQuestionId]);
 
   useEffect(() => {
     if (editingDetails && titleRef.current) {
@@ -169,6 +351,10 @@ const QuestionSetPage: React.FC<
         date: string;
         questionCount: number;
         snippetCount: number;
+        status: QuestionSetStatus;
+        createdAt: string;
+        updatedAt: string;
+        finalizedAt: string | null;
       }[] = await res.json();
       setAvailableSets(data);
       setShowLoadModal(true);
@@ -177,7 +363,46 @@ const QuestionSetPage: React.FC<
       console.error("Failed to load question sets", error);
     }
   };
-  const closeLoadModal = () => setShowLoadModal(false);
+  const closeLoadModal = useCallback(() => {
+    setShowLoadModal(false);
+  }, []);
+  const adoptQuestionSet = useCallback(
+    (set: QuestionSet) => {
+      setQuestionSet(set);
+      setSnippets(
+        set.qaResults.reduce((acc, result) => {
+          acc[result.snippetId] = result;
+          return acc;
+        }, {} as Record<string, QAResult>),
+      );
+      setIsSaved(true);
+    },
+    [setIsSaved, setQuestionSet, setSnippets],
+  );
+
+  const syncAvailableSet = useCallback(
+    (next: QuestionSet) => {
+      setAvailableSets((prev) => {
+        const index = prev.findIndex((item) => item.id === next.id);
+        if (index === -1) {
+          return prev;
+        }
+        const copy = [...prev];
+        copy[index] = {
+          ...copy[index],
+          title: next.title,
+          questionCount: next.questions.length,
+          status: next.status,
+          date: next.updatedAt,
+          createdAt: next.createdAt,
+          updatedAt: next.updatedAt,
+          finalizedAt: next.finalizedAt,
+        };
+        return copy;
+      });
+    },
+    [setAvailableSets],
+  );
   const handleDeleteSet = async (id: string) => {
     if (
       window.confirm(
@@ -204,35 +429,30 @@ const QuestionSetPage: React.FC<
     }
   };
 
-  const loadQuestionSet = async (id: string) => {
-    const headers = buildAuthHeaders();
-    try {
-      const res = await fetch(`${API_URL}/api/questions/${id}`, {
-        headers,
-      });
-      if (!res.ok) {
-        if (isUnauthorized(res.status)) {
-          forceLogoutRedirect();
-          return;
+  const loadQuestionSet = useCallback(
+    async (id: string) => {
+      const headers = buildAuthHeaders();
+      try {
+        const res = await fetch(`${API_URL}/api/questions/${id}`, {
+          headers,
+        });
+        if (!res.ok) {
+          if (isUnauthorized(res.status)) {
+            forceLogoutRedirect();
+            return;
+          }
+          throw new Error(await res.text());
         }
-        throw new Error(await res.text());
+        const set: QuestionSet = await res.json();
+
+        adoptQuestionSet(set);
+        closeLoadModal();
+      } catch (error) {
+        console.error("Failed to load question set", error);
       }
-      const set: QuestionSet = await res.json();
-
-      setQuestionSet(set);
-      setSnippets(
-        set.qaResults.reduce((acc, result) => {
-          acc[result.snippetId] = result;
-          return acc;
-        }, {} as Record<string, QAResult>),
-      );
-
-      setIsSaved(true);
-      closeLoadModal();
-    } catch (error) {
-      console.error("Failed to load question set", error);
-    }
-  };
+    },
+    [adoptQuestionSet, buildAuthHeaders, closeLoadModal],
+  );
 
   const handleSubmit = async () => {
     setQuestionSet(null);
@@ -304,15 +524,199 @@ const QuestionSetPage: React.FC<
     }
   };
 
-  const handleSave = () => {
-    // TODO: persist this question set to the backend
-    setIsSaved(true);
-  };
+  const persistQuestionSet = useCallback(async () => {
+    if (!questionSet || !questionSet.id) {
+      throw new Error("No question set is currently loaded");
+    }
+    const headers = {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    };
+    const res = await fetch(`${API_URL}/api/questions/${questionSet.id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        title: questionSet.title,
+        snippetType: questionSet.snippetType,
+        executionPlan: questionSet.executionPlan,
+        executionPlanReasoning: questionSet.executionPlanReasoning,
+        questions: questionSet.questions,
+        originalUserInput: questionSet.originalUserInput,
+      }),
+    });
+    if (!res.ok) {
+      if (isUnauthorized(res.status)) {
+        forceLogoutRedirect();
+      }
+      const message = await res.text();
+      throw new Error(message || "Failed to save question set");
+    }
+    const updated: QuestionSet = await res.json();
+    adoptQuestionSet(updated);
+    syncAvailableSet(updated);
+    return updated;
+  }, [
+    questionSet,
+    buildAuthHeaders,
+    adoptQuestionSet,
+    syncAvailableSet,
+  ]);
+
+  const finalizeCurrentDraft = useCallback(async () => {
+    if (!questionSet || !questionSet.id) {
+      throw new Error("No question set is currently loaded");
+    }
+    const headers = buildAuthHeaders();
+    const res = await fetch(
+      `${API_URL}/api/questions/${questionSet.id}/finalize`,
+      {
+        method: "POST",
+        headers,
+      },
+    );
+    if (!res.ok) {
+      if (isUnauthorized(res.status)) {
+        forceLogoutRedirect();
+      }
+      const message = await res.text();
+      throw new Error(message || "Failed to finalize question set");
+    }
+    const updated: QuestionSet = await res.json();
+    adoptQuestionSet(updated);
+    syncAvailableSet(updated);
+    return updated;
+  }, [questionSet, buildAuthHeaders, adoptQuestionSet, syncAvailableSet]);
+
+  const toggleActivation = useCallback(
+    async (nextActive: boolean) => {
+      if (!questionSet || !questionSet.id) {
+        throw new Error("No question set is currently loaded");
+      }
+      const headers = {
+        ...buildAuthHeaders(),
+        "Content-Type": "application/json",
+      };
+      const res = await fetch(
+        `${API_URL}/api/questions/${questionSet.id}/activation`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ active: nextActive }),
+        },
+      );
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+        }
+        const message = await res.text();
+        throw new Error(message || "Failed to change activation state");
+      }
+      const updated: QuestionSet = await res.json();
+      adoptQuestionSet(updated);
+      syncAvailableSet(updated);
+      return updated;
+    },
+    [questionSet, buildAuthHeaders, adoptQuestionSet, syncAvailableSet],
+  );
+
+  const handleSave = useCallback(() => {
+    if (!questionSet || !canEditCurrentSet) {
+      return;
+    }
+    setConfirmation({ type: "save" });
+  }, [questionSet, canEditCurrentSet]);
+
+  const handleFinalize = useCallback(() => {
+    if (!questionSet || questionSet.status !== "draft") {
+      return;
+    }
+    if (!canFinalizeDraft) {
+      return;
+    }
+    setConfirmation({ type: "finalize" });
+  }, [questionSet, canFinalizeDraft]);
+
+  const handleActivationRequest = useCallback(
+    (nextActive: boolean) => {
+      if (!questionSet || questionSet.status === "draft") {
+        return;
+      }
+      if (!canManageActivation) {
+        return;
+      }
+      setConfirmation({ type: "activation", nextActive });
+    },
+    [questionSet, canManageActivation],
+  );
+
+  const handleCancelEdits = useCallback(async () => {
+    if (!questionSet) {
+      return;
+    }
+    if (!questionSet.id) {
+      setQuestionSet(blankQuestionSet);
+      setSnippets({});
+      setIsSaved(true);
+      setSelectedQuestionId(null);
+      setEditingDetails(false);
+      setEditingDesc(false);
+      setEditingPlan(false);
+      return;
+    }
+    const currentId = questionSet.id;
+    try {
+      await loadQuestionSet(currentId);
+    } catch (error) {
+      console.error("Failed to reload question set", error);
+    } finally {
+      setEditingDetails(false);
+      setEditingDesc(false);
+      setEditingPlan(false);
+    }
+  }, [
+    questionSet,
+    loadQuestionSet,
+    setQuestionSet,
+    setSnippets,
+    setIsSaved,
+    setSelectedQuestionId,
+  ]);
+
+  const handleCancelConfirmation = useCallback(() => {
+    if (isProcessingAction) return;
+    setConfirmation(null);
+  }, [isProcessingAction]);
+
+  const handleConfirmAction = useCallback(async () => {
+    if (!confirmation) return;
+    setIsProcessingAction(true);
+    try {
+      if (confirmation.type === "save") {
+        await persistQuestionSet();
+      } else if (confirmation.type === "finalize") {
+        await finalizeCurrentDraft();
+      } else if (confirmation.type === "activation") {
+        await toggleActivation(confirmation.nextActive);
+      }
+      setConfirmation(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(error);
+      window.alert(message);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  }, [
+    confirmation,
+    finalizeCurrentDraft,
+    persistQuestionSet,
+    toggleActivation,
+  ]);
 
   const handleListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!questions.length) return;
     const currentIndex = questions.findIndex(
-      (q) => selectedQuestion?.questionId === q.questionId
+      (q) => selectedQuestionId === q.questionId,
     );
     let nextIndex = currentIndex;
     if (e.key === "ArrowDown") {
@@ -323,7 +727,8 @@ const QuestionSetPage: React.FC<
       e.preventDefault();
     }
     if (nextIndex !== currentIndex) {
-      setSelectedQuestion(questions[nextIndex]);
+      const nextQuestion = questions[nextIndex];
+      setSelectedQuestionId(nextQuestion ? nextQuestion.questionId : null);
     }
   };
 
@@ -458,6 +863,11 @@ const QuestionSetPage: React.FC<
             >
               <div className="load-item-content">
                 <div className="load-item-title">{set.title}</div>
+                <div className="load-item-status">
+                  <span className={`status-pill status-${set.status}`}>
+                    {statusLabelMap[set.status]}
+                  </span>
+                </div>
                 <div className="load-item-subtitle">
                   {new Date(set.date).toLocaleString(undefined, {
                     dateStyle: "medium",
@@ -526,6 +936,92 @@ const QuestionSetPage: React.FC<
         </ul>
       </Modal>
 
+      <div className="status-banner">
+        {questionSet ? (
+          <>
+            <div className="status-summary">
+              <span className={`status-pill status-${questionSet.status}`}>
+                {statusLabelMap[questionSet.status]}
+              </span>
+              {hasUnsavedChanges && (
+                <span className="status-pill unsaved">Unsaved changes</span>
+              )}
+              <div className="status-description">{statusDescription}</div>
+              <div className="status-meta">
+                {formattedUpdatedAt && (
+                  <span>Last updated {formattedUpdatedAt}</span>
+                )}
+                {formattedFinalizedAt && (
+                  <span>Finalized {formattedFinalizedAt}</span>
+                )}
+              </div>
+            </div>
+            <div className="status-actions">
+              {questionSet.status === "draft" && (
+                <button
+                  className="btn-primary"
+                  onClick={handleFinalize}
+                  disabled={!canFinalizeDraft || hasUnsavedChanges || isProcessingAction}
+                >
+                  Finalize &amp; Activate
+                </button>
+              )}
+              {questionSet.status !== "draft" && canToggleActivation && (
+                <button
+                  className="btn-secondary"
+                  onClick={() => handleActivationRequest(!isActive)}
+                  disabled={hasUnsavedChanges || isProcessingAction}
+                >
+                  {isActive ? "Deactivate" : "Activate"} Question Set
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <span className="status-placeholder">
+            Generate or load a question set to get started.
+          </span>
+        )}
+      </div>
+
+      <Modal
+        isOpen={Boolean(confirmation)}
+        onClose={handleCancelConfirmation}
+        title={confirmationContent?.title ?? "Confirm action"}
+        className="confirm-modal"
+        bodyClassName="confirm-modal-body"
+      >
+        {confirmationContent && (
+          <>
+            <p>{confirmationContent.message}</p>
+            {confirmation?.type === "finalize" && (
+              <p className="confirm-note">
+                Finalized question sets stay available for activation/deactivation
+                but can no longer return to the draft state.
+              </p>
+            )}
+            <div className="modal-buttons">
+              <button
+                className="btn-secondary"
+                onClick={handleCancelConfirmation}
+                disabled={isProcessingAction}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  void handleConfirmAction();
+                }}
+                disabled={isProcessingAction}
+              >
+                {confirmationContent.confirmLabel}
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
+
       <div className="main-content">
         <div className="panel questions-panel" tabIndex={0}>
           <div className="panel-header">
@@ -578,7 +1074,7 @@ const QuestionSetPage: React.FC<
                         : ""
                     }`}
                     onClick={() => {
-                      setSelectedQuestion(q);
+                      setSelectedQuestionId(q.questionId);
                       listRef.current?.focus();
                     }}
                   >
@@ -602,6 +1098,7 @@ const QuestionSetPage: React.FC<
                     className="edit-toggle"
                     onClick={() => setEditingDetails((v) => !v)}
                     aria-label="Toggle Edit Mode"
+                    disabled={!canEditCurrentSet}
                   >
                     {editingDetails ? "💾 Save" : "✏️ Edit"}
                   </button>
@@ -616,19 +1113,18 @@ const QuestionSetPage: React.FC<
                         disabled={!editingDetails}
                         value={selectedQuestion.questionText}
                         growVertically={true}
-                        onChange={(e) =>
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, questionText: e.target.value }
-                                    : q
-                                ),
-                              }
-                          )
-                        }
+                        onChange={(e) => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
+                          const nextValue = e.target.value;
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, questionText: nextValue }
+                                : q
+                            ),
+                          }));
+                        }}
                         onInput={() => {
                           const ta = titleRef.current;
                           if (ta) {
@@ -654,19 +1150,18 @@ const QuestionSetPage: React.FC<
                   disabled={!editingDetails}
                   growVertically={true}
                   value={selectedQuestion!.group}
-                  onChange={(e) =>
-                    setQuestionSet(
-                      (prev) =>
-                        prev && {
-                          ...prev,
-                          questions: prev.questions.map((q) =>
-                            q.questionId === selectedQuestion!.questionId
-                              ? { ...q, group: e.target.value }
-                              : q
-                          ),
-                        }
-                    )
-                  }
+                  onChange={(e) => {
+                    if (!selectedQuestion || !canEditCurrentSet) return;
+                    const nextValue = e.target.value;
+                    updateQuestionSetField((prev) => ({
+                      ...prev,
+                      questions: prev.questions.map((q) =>
+                        q.questionId === selectedQuestion.questionId
+                          ? { ...q, group: nextValue }
+                          : q
+                      ),
+                    }));
+                  }}
                 />
                 <h3 className="details-section-header">
                   Question Type:&nbsp;
@@ -675,18 +1170,16 @@ const QuestionSetPage: React.FC<
                     disabled={!editingDetails}
                     value={selectedQuestion.questionType}
                     onChange={(e) => {
+                      if (!selectedQuestion || !canEditCurrentSet) return;
                       const qt = e.target.value as QuestionType;
-                      setQuestionSet(
-                        (prev) =>
-                          prev && {
-                            ...prev,
-                            questions: prev.questions.map((q) =>
-                              q.questionId === selectedQuestion.questionId
-                                ? ({ ...q, questionType: qt } as Question)
-                                : q
-                            ),
-                          }
-                      );
+                      updateQuestionSetField((prev) => ({
+                        ...prev,
+                        questions: prev.questions.map((q) =>
+                          q.questionId === selectedQuestion.questionId
+                            ? ({ ...q, questionType: qt } as Question)
+                            : q
+                        ),
+                      }));
                     }}
                   >
                     {Object.entries(QUESTION_TYPE_LABELS).map(([key, info]) => (
@@ -716,19 +1209,18 @@ const QuestionSetPage: React.FC<
                   className="details-field"
                   disabled={!editingDetails}
                   value={selectedQuestion.description}
-                  onChange={(e) =>
-                    setQuestionSet(
-                      (prev) =>
-                        prev && {
-                          ...prev,
-                          questions: prev.questions.map((q) =>
-                            q.questionId === selectedQuestion.questionId
-                              ? { ...q, description: e.target.value }
-                              : q
-                          ),
-                        }
-                    )
-                  }
+                  onChange={(e) => {
+                    if (!selectedQuestion || !canEditCurrentSet) return;
+                    const nextValue = e.target.value;
+                    updateQuestionSetField((prev) => ({
+                      ...prev,
+                      questions: prev.questions.map((q) =>
+                        q.questionId === selectedQuestion.questionId
+                          ? { ...q, description: nextValue }
+                          : q
+                      ),
+                    }));
+                  }}
                 />
 
                 {/* Editable per-type fields */}
@@ -745,46 +1237,42 @@ const QuestionSetPage: React.FC<
                               disabled={!editingDetails}
                               value={choice.label}
                               onChange={(e) => {
+                                if (!selectedQuestion || !canEditCurrentSet)
+                                  return;
                                 const newChoices = selectedQuestion.choices.map(
                                   (c, i) =>
                                     i === idx
                                       ? { ...c, label: e.target.value }
                                       : c
                                 );
-                                setQuestionSet(
-                                  (prev) =>
-                                    prev && {
-                                      ...prev,
-                                      questions: prev.questions.map((q) =>
-                                        q.questionId ===
-                                        selectedQuestion.questionId
-                                          ? { ...q, choices: newChoices }
-                                          : q
-                                      ),
-                                    }
-                                );
+                                updateQuestionSetField((prev) => ({
+                                  ...prev,
+                                  questions: prev.questions.map((q) =>
+                                    q.questionId === selectedQuestion.questionId
+                                      ? { ...q, choices: newChoices }
+                                      : q
+                                  ),
+                                }));
                               }}
                             />
                             {editingDetails && (
                               <button
                                 className="dependency-remove"
                                 onClick={() => {
+                                  if (!selectedQuestion || !canEditCurrentSet)
+                                    return;
                                   const newChoices =
                                     selectedQuestion.choices.filter(
                                       (_, i) => i !== idx
                                     );
-                                  setQuestionSet(
-                                    (prev) =>
-                                      prev && {
-                                        ...prev,
-                                        questions: prev.questions.map((q) =>
-                                          q.questionId ===
-                                          selectedQuestion.questionId
-                                            ? { ...q, choices: newChoices }
-                                            : q
-                                        ),
-                                      }
-                                  );
+                                  updateQuestionSetField((prev) => ({
+                                    ...prev,
+                                    questions: prev.questions.map((q) =>
+                                      q.questionId === selectedQuestion.questionId
+                                        ? { ...q, choices: newChoices }
+                                        : q
+                                    ),
+                                  }));
                                 }}
                                 aria-label="Remove choice"
                               >
@@ -798,24 +1286,22 @@ const QuestionSetPage: React.FC<
                             value={choice.criteria}
                             growVertically={true}
                             onChange={(e) => {
+                              if (!selectedQuestion || !canEditCurrentSet)
+                                return;
                               const newChoices = selectedQuestion.choices.map(
                                 (c, i) =>
                                   i === idx
                                     ? { ...c, criteria: e.target.value }
                                     : c
                               );
-                              setQuestionSet(
-                                (prev) =>
-                                  prev && {
-                                    ...prev,
-                                    questions: prev.questions.map((q) =>
-                                      q.questionId ===
-                                      selectedQuestion.questionId
-                                        ? { ...q, choices: newChoices }
-                                        : q
-                                    ),
-                                  }
-                              );
+                              updateQuestionSetField((prev) => ({
+                                ...prev,
+                                questions: prev.questions.map((q) =>
+                                  q.questionId === selectedQuestion.questionId
+                                    ? { ...q, choices: newChoices }
+                                    : q
+                                ),
+                              }));
                             }}
                           />
                         </li>
@@ -825,21 +1311,19 @@ const QuestionSetPage: React.FC<
                       <button
                         className="dependency-add"
                         onClick={() => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
                           const newChoices = [
                             ...selectedQuestion.choices,
                             { label: "", criteria: "" },
                           ];
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, choices: newChoices }
-                                    : q
-                                ),
-                              }
-                          );
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, choices: newChoices }
+                                : q,
+                            ),
+                          }));
                         }}
                       >
                         + Add choice
@@ -858,18 +1342,16 @@ const QuestionSetPage: React.FC<
                         disabled={!editingDetails}
                         value={String(selectedQuestion.min)}
                         onChange={(e) => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
                           const min = Number(e.target.value);
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, min }
-                                    : q
-                                ),
-                              }
-                          );
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, min }
+                                : q,
+                            ),
+                          }));
                         }}
                       />
                       <span> to </span>
@@ -878,18 +1360,16 @@ const QuestionSetPage: React.FC<
                         disabled={!editingDetails}
                         value={String(selectedQuestion.max)}
                         onChange={(e) => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
                           const max = Number(e.target.value);
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, max }
-                                    : q
-                                ),
-                              }
-                          );
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, max }
+                                : q,
+                            ),
+                          }));
                         }}
                       />
                       <span>.</span>
@@ -904,22 +1384,20 @@ const QuestionSetPage: React.FC<
                               disabled={!editingDetails}
                               value={String(rng.min)}
                               onChange={(e) => {
+                                if (!selectedQuestion || !canEditCurrentSet)
+                                  return;
                                 const min = Number(e.target.value);
                                 const newRanges = selectedQuestion.ranges.map(
                                   (r, i) => (i === idx ? { ...r, min } : r)
                                 );
-                                setQuestionSet(
-                                  (prev) =>
-                                    prev && {
-                                      ...prev,
-                                      questions: prev.questions.map((q) =>
-                                        q.questionId ===
-                                        selectedQuestion.questionId
-                                          ? { ...q, ranges: newRanges }
-                                          : q
-                                      ),
-                                    }
-                                );
+                                updateQuestionSetField((prev) => ({
+                                  ...prev,
+                                  questions: prev.questions.map((q) =>
+                                    q.questionId === selectedQuestion.questionId
+                                      ? { ...q, ranges: newRanges }
+                                      : q,
+                                  ),
+                                }));
                               }}
                             />
                             <span>–</span>
@@ -928,22 +1406,20 @@ const QuestionSetPage: React.FC<
                               disabled={!editingDetails}
                               value={String(rng.max)}
                               onChange={(e) => {
+                                if (!selectedQuestion || !canEditCurrentSet)
+                                  return;
                                 const max = Number(e.target.value);
                                 const newRanges = selectedQuestion.ranges.map(
                                   (r, i) => (i === idx ? { ...r, max } : r)
                                 );
-                                setQuestionSet(
-                                  (prev) =>
-                                    prev && {
-                                      ...prev,
-                                      questions: prev.questions.map((q) =>
-                                        q.questionId ===
-                                        selectedQuestion.questionId
-                                          ? { ...q, ranges: newRanges }
-                                          : q
-                                      ),
-                                    }
-                                );
+                                updateQuestionSetField((prev) => ({
+                                  ...prev,
+                                  questions: prev.questions.map((q) =>
+                                    q.questionId === selectedQuestion.questionId
+                                      ? { ...q, ranges: newRanges }
+                                      : q,
+                                  ),
+                                }));
                               }}
                             />
                             <span>:</span>
@@ -952,44 +1428,40 @@ const QuestionSetPage: React.FC<
                               disabled={!editingDetails}
                               value={rng.title}
                               onChange={(e) => {
+                                if (!selectedQuestion || !canEditCurrentSet)
+                                  return;
                                 const title = e.target.value;
                                 const newRanges = selectedQuestion.ranges.map(
                                   (r, i) => (i === idx ? { ...r, title } : r)
                                 );
-                                setQuestionSet(
-                                  (prev) =>
-                                    prev && {
-                                      ...prev,
-                                      questions: prev.questions.map((q) =>
-                                        q.questionId ===
-                                        selectedQuestion.questionId
-                                          ? { ...q, ranges: newRanges }
-                                          : q
-                                      ),
-                                    }
-                                );
+                                updateQuestionSetField((prev) => ({
+                                  ...prev,
+                                  questions: prev.questions.map((q) =>
+                                    q.questionId === selectedQuestion.questionId
+                                      ? { ...q, ranges: newRanges }
+                                      : q,
+                                  ),
+                                }));
                               }}
                             />
                             {editingDetails && (
                               <button
                                 className="dependency-remove"
                                 onClick={() => {
+                                  if (!selectedQuestion || !canEditCurrentSet)
+                                    return;
                                   const newRanges =
                                     selectedQuestion.ranges.filter(
                                       (_, i) => i !== idx
                                     );
-                                  setQuestionSet(
-                                    (prev) =>
-                                      prev && {
-                                        ...prev,
-                                        questions: prev.questions.map((q) =>
-                                          q.questionId ===
-                                          selectedQuestion.questionId
-                                            ? { ...q, ranges: newRanges }
-                                            : q
-                                        ),
-                                      }
-                                  );
+                                  updateQuestionSetField((prev) => ({
+                                    ...prev,
+                                    questions: prev.questions.map((q) =>
+                                      q.questionId === selectedQuestion.questionId
+                                        ? { ...q, ranges: newRanges }
+                                        : q,
+                                    ),
+                                  }));
                                 }}
                                 aria-label="Remove range"
                               >
@@ -1004,24 +1476,22 @@ const QuestionSetPage: React.FC<
                             growVertically={true}
                             value={rng.criteria}
                             onChange={(e) => {
+                              if (!selectedQuestion || !canEditCurrentSet)
+                                return;
                               const newRanges = selectedQuestion.ranges.map(
                                 (r, i) =>
                                   i === idx
                                     ? { ...r, criteria: e.target.value }
                                     : r
-                              );
-                              setQuestionSet(
-                                (prev) =>
-                                  prev && {
-                                    ...prev,
-                                    questions: prev.questions.map((q) =>
-                                      q.questionId ===
-                                      selectedQuestion.questionId
-                                        ? { ...q, ranges: newRanges }
-                                        : q
-                                    ),
-                                  }
-                              );
+                                );
+                              updateQuestionSetField((prev) => ({
+                                ...prev,
+                                questions: prev.questions.map((q) =>
+                                  q.questionId === selectedQuestion.questionId
+                                    ? { ...q, ranges: newRanges }
+                                    : q,
+                                ),
+                              }));
                             }}
                           />
                           <div
@@ -1036,6 +1506,8 @@ const QuestionSetPage: React.FC<
                             growVertically={true}
                             value={rng.guidanceWithinRange}
                             onChange={(e) => {
+                              if (!selectedQuestion || !canEditCurrentSet)
+                                return;
                               const newRanges = selectedQuestion.ranges.map(
                                 (r, i) =>
                                   i === idx
@@ -1045,18 +1517,14 @@ const QuestionSetPage: React.FC<
                                       }
                                     : r
                               );
-                              setQuestionSet(
-                                (prev) =>
-                                  prev && {
-                                    ...prev,
-                                    questions: prev.questions.map((q) =>
-                                      q.questionId ===
-                                      selectedQuestion.questionId
-                                        ? { ...q, ranges: newRanges }
-                                        : q
-                                    ),
-                                  }
-                              );
+                              updateQuestionSetField((prev) => ({
+                                ...prev,
+                                questions: prev.questions.map((q) =>
+                                  q.questionId === selectedQuestion.questionId
+                                    ? { ...q, ranges: newRanges }
+                                    : q,
+                                ),
+                              }));
                             }}
                           />
                         </li>
@@ -1066,6 +1534,7 @@ const QuestionSetPage: React.FC<
                       <button
                         className="dependency-add"
                         onClick={() => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
                           const newRanges = [
                             ...selectedQuestion.ranges,
                             {
@@ -1076,17 +1545,14 @@ const QuestionSetPage: React.FC<
                               title: "",
                             },
                           ];
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, ranges: newRanges }
-                                    : q
-                                ),
-                              }
-                          );
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, ranges: newRanges }
+                                : q,
+                            ),
+                          }));
                         }}
                       >
                         + Add range
@@ -1103,22 +1569,20 @@ const QuestionSetPage: React.FC<
                       disabled={!editingDetails}
                       value={selectedQuestion.extractMode}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const extractMode = e.target.value as QuestionType;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? {
-                                      ...q,
-                                      extractMode:
-                                        extractMode as ListQuestion["extractMode"],
-                                    }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? {
+                                  ...q,
+                                  extractMode:
+                                    extractMode as ListQuestion["extractMode"],
+                                }
+                              : q,
+                          ),
+                        }));
                       }}
                     >
                       <option value="exact">Exact</option>
@@ -1135,18 +1599,16 @@ const QuestionSetPage: React.FC<
                       value={selectedQuestion.extractionCriteria}
                       growVertically={true}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const extractionCriteria = e.target.value;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? { ...q, extractionCriteria }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? { ...q, extractionCriteria }
+                              : q,
+                          ),
+                        }));
                       }}
                     />
 
@@ -1156,18 +1618,16 @@ const QuestionSetPage: React.FC<
                       disabled={!editingDetails}
                       value={selectedQuestion.cardinality}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const cardinality = e.target.value;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? { ...q, cardinality }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? { ...q, cardinality }
+                              : q,
+                          ),
+                        }));
                       }}
                     />
 
@@ -1180,18 +1640,16 @@ const QuestionSetPage: React.FC<
                       disabled={!editingDetails}
                       checked={selectedQuestion.allowAmbiguity}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const allowAmbiguity = e.target.checked;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? { ...q, allowAmbiguity }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? { ...q, allowAmbiguity }
+                              : q,
+                          ),
+                        }));
                       }}
                     />
 
@@ -1204,18 +1662,16 @@ const QuestionSetPage: React.FC<
                       value={selectedQuestion.disambiguationGuide}
                       growVertically={true}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const disambiguationGuide = e.target.value;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? { ...q, disambiguationGuide }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? { ...q, disambiguationGuide }
+                              : q,
+                          ),
+                        }));
                       }}
                     />
 
@@ -1228,18 +1684,16 @@ const QuestionSetPage: React.FC<
                       value={selectedQuestion.previewGuidance}
                       growVertically={true}
                       onChange={(e) => {
+                        if (!selectedQuestion || !canEditCurrentSet) return;
                         const previewGuidance = e.target.value;
-                        setQuestionSet(
-                          (prev) =>
-                            prev && {
-                              ...prev,
-                              questions: prev.questions.map((q) =>
-                                q.questionId === selectedQuestion.questionId
-                                  ? { ...q, previewGuidance }
-                                  : q
-                              ),
-                            }
-                        );
+                        updateQuestionSetField((prev) => ({
+                          ...prev,
+                          questions: prev.questions.map((q) =>
+                            q.questionId === selectedQuestion.questionId
+                              ? { ...q, previewGuidance }
+                              : q,
+                          ),
+                        }));
                       }}
                     />
                   </>
@@ -1264,22 +1718,20 @@ const QuestionSetPage: React.FC<
                                 <button
                                   className="dependency-remove"
                                   onClick={() => {
+                                    if (!selectedQuestion || !canEditCurrentSet)
+                                      return;
                                     const newDeps =
                                       selectedQuestion.dependencies.filter(
                                         (_, i) => i !== idx
                                       );
-                                    setQuestionSet(
-                                      (prev) =>
-                                        prev && {
-                                          ...prev,
-                                          questions: prev.questions.map((q) =>
-                                            q.questionId ===
-                                            selectedQuestion.questionId
-                                              ? { ...q, dependencies: newDeps }
-                                              : q
-                                          ),
-                                        }
-                                    );
+                                    updateQuestionSetField((prev) => ({
+                                      ...prev,
+                                      questions: prev.questions.map((q) =>
+                                        q.questionId === selectedQuestion.questionId
+                                          ? { ...q, dependencies: newDeps }
+                                          : q,
+                                      ),
+                                    }));
                                   }}
                                   aria-label="Remove dependency"
                                 >
@@ -1294,24 +1746,22 @@ const QuestionSetPage: React.FC<
                               growVertically={true}
                               value={dep.reason}
                               onChange={(e) => {
+                                if (!selectedQuestion || !canEditCurrentSet)
+                                  return;
                                 const newDeps =
                                   selectedQuestion.dependencies.map((d, i) =>
                                     i === idx
                                       ? { ...d, reason: e.target.value }
                                       : d
                                   );
-                                setQuestionSet(
-                                  (prev) =>
-                                    prev && {
-                                      ...prev,
-                                      questions: prev.questions.map((q) =>
-                                        q.questionId ===
-                                        selectedQuestion.questionId
-                                          ? { ...q, dependencies: newDeps }
-                                          : q
-                                      ),
-                                    }
-                                );
+                                updateQuestionSetField((prev) => ({
+                                  ...prev,
+                                  questions: prev.questions.map((q) =>
+                                    q.questionId === selectedQuestion.questionId
+                                      ? { ...q, dependencies: newDeps }
+                                      : q,
+                                  ),
+                                }));
                               }}
                             />
                           </li>
@@ -1322,21 +1772,19 @@ const QuestionSetPage: React.FC<
                       <button
                         className="dependency-add"
                         onClick={() => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
                           const newDeps = [
                             ...selectedQuestion.dependencies,
                             { questionId: 0, reason: "" },
                           ];
-                          setQuestionSet(
-                            (prev) =>
-                              prev && {
-                                ...prev,
-                                questions: prev.questions.map((q) =>
-                                  q.questionId === selectedQuestion.questionId
-                                    ? { ...q, dependencies: newDeps }
-                                    : q
-                                ),
-                              }
-                          );
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, dependencies: newDeps }
+                                : q,
+                            ),
+                          }));
                         }}
                       >
                         + Add dependency
@@ -1361,22 +1809,27 @@ const QuestionSetPage: React.FC<
               value={snippetType}
               growVertically={true}
               rows={6}
-              onChange={(e) =>
-                setQuestionSet((prev) => ({
-                  ...blankQuestionSet,
+              onChange={(e) => {
+                if (!canEditCurrentSet) return;
+                const nextValue = e.target.value;
+                updateQuestionSetField((prev) => ({
                   ...prev,
-                  snippetType: e.target.value,
-                }))
-              }
+                  snippetType: nextValue,
+                }));
+              }}
             />
             <button
               className="textarea-edit-button"
-              onClick={() => setEditingDesc((v) => !v)}
+              onClick={() => {
+                if (!canEditCurrentSet) return;
+                setEditingDesc((v) => !v);
+              }}
               aria-label={
                 editingDesc
                   ? "Save snippet description"
                   : "Edit snippet description"
               }
+              disabled={!canEditCurrentSet}
             >
               {editingDesc ? "💾" : "✏️"}
             </button>
@@ -1391,20 +1844,25 @@ const QuestionSetPage: React.FC<
               value={executionPlan}
               growVertically={true}
               rows={6}
-              onChange={(e) =>
-                setQuestionSet((prev) => ({
-                  ...blankQuestionSet,
+              onChange={(e) => {
+                if (!canEditCurrentSet) return;
+                const nextValue = e.target.value;
+                updateQuestionSetField((prev) => ({
                   ...prev,
-                  executionPlan: e.target.value,
-                }))
-              }
+                  executionPlan: nextValue,
+                }));
+              }}
             />
             <button
               className="textarea-edit-button"
-              onClick={() => setEditingPlan((v) => !v)}
+              onClick={() => {
+                if (!canEditCurrentSet) return;
+                setEditingPlan((v) => !v);
+              }}
               aria-label={
                 editingPlan ? "Save execution plan" : "Edit execution plan"
               }
+              disabled={!canEditCurrentSet}
             >
               {editingPlan ? "💾" : "✏️"}
             </button>
@@ -1412,34 +1870,100 @@ const QuestionSetPage: React.FC<
         </div>
       </div>
 
-      {questions.length > 0 && !isSaved && (
+      {questionSet && canEditCurrentSet && !isSaved && (
         <div className="sticky-footer">
           <button
             className="btn-secondary"
             onClick={() => {
-              setQuestionSet(blankQuestionSet);
-              setIsSaved(false);
-              setSelectedQuestion(null);
-              setUserInput("");
-              setEditingDesc(false);
-              setEditingPlan(false);
-              setStreamComplete(false);
-              setLogs([]);
-              setShowModal(false);
-              setShowLoadModal(false);
-              setAvailableSets([]);
-              setIsGenerating(false);
+              void handleCancelEdits();
             }}
+            disabled={isProcessingAction}
           >
             Cancel
           </button>
-          <button className="btn-primary" onClick={handleSave}>
+          <button
+            className="btn-primary"
+            onClick={handleSave}
+            disabled={isProcessingAction}
+          >
             Save Question Set
           </button>
         </div>
       )}
 
       <style jsx>{`
+        .status-banner {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1rem;
+          background: #fff;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          padding: 1rem;
+        }
+        .status-summary {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          flex: 1 1 auto;
+        }
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.25rem 0.75rem;
+          border-radius: 999px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+        .status-pill + .status-pill {
+          margin-left: 0.5rem;
+        }
+        .status-pill.status-draft {
+          background: #fff4e6;
+          color: #b35c00;
+        }
+        .status-pill.status-active {
+          background: #e6f7ff;
+          color: #006aa6;
+        }
+        .status-pill.status-inactive {
+          background: #f5f5f5;
+          color: #555;
+        }
+        .status-pill.unsaved {
+          background: #fff0f0;
+          color: #b80000;
+        }
+        .status-description {
+          color: #555;
+          font-size: 0.95rem;
+        }
+        .status-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1rem;
+          color: #888;
+          font-size: 0.85rem;
+        }
+        .status-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .status-placeholder {
+          color: #555;
+        }
+        .confirm-modal-body {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .confirm-note {
+          color: #666;
+          font-size: 0.9rem;
+        }
         /* Load Modal Styles */
         .load-list {
           list-style: none;
@@ -1466,6 +1990,9 @@ const QuestionSetPage: React.FC<
           flex: 1;
           display: flex;
           flex-direction: column;
+        }
+        .load-item-status {
+          margin-bottom: 0.25rem;
         }
         .load-item-title {
           font-weight: 600;

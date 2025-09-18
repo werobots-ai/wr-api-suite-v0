@@ -4,6 +4,9 @@ import {
   loadQuestionSet,
   saveQuestionSet,
   softDeleteQuestionSet,
+  updateQuestionSet,
+  finalizeQuestionSet,
+  setQuestionSetActivation,
 } from "../../../shared/utils/questionStore";
 import { initStream } from "../../../shared/utils/initStream";
 import { questionsReasoner } from "../../../shared/llmCalls/questionsReasoner";
@@ -15,11 +18,60 @@ import {
 import { questionExecutionPlanner } from "../../../shared/llmCalls/questionExecutionPlanner";
 import { v4 as uuid } from "uuid";
 import { marked } from "marked";
-import { QAResult } from "../../../shared/types/Questions";
+import {
+  QAResult,
+  QuestionSetActor,
+  QuestionSet,
+} from "../../../shared/types/Questions";
 import { recordUsage } from "../../../shared/utils/userStore";
 import pricing from "../../../shared/config/pricing.json";
 
 const router = Router();
+
+type DocumentPermissions = {
+  createQuestionSet: boolean;
+  editQuestionSet: boolean;
+  manageQuestionSetActivation: boolean;
+};
+
+function getDocumentPermissions(res: express.Response): DocumentPermissions {
+  const permissions =
+    (res.locals.documentPermissions as Record<string, unknown> | undefined) ?? {};
+  return {
+    createQuestionSet: Boolean(permissions.createQuestionSet),
+    editQuestionSet: Boolean(permissions.editQuestionSet),
+    manageQuestionSetActivation: Boolean(
+      permissions.manageQuestionSetActivation,
+    ),
+  };
+}
+
+function resolveActor(res: express.Response): QuestionSetActor | null {
+  const userId = res.locals.userId as string | undefined;
+  if (userId) {
+    const user = res.locals.user as { email?: string } | undefined;
+    return {
+      type: "user",
+      id: userId,
+      label: user?.email ?? undefined,
+    };
+  }
+  const keyId = res.locals.keyId as string | undefined;
+  if (keyId) {
+    const keySetId = res.locals.keySetId as string | undefined;
+    return {
+      type: "apiKey",
+      id: keyId,
+      label: keySetId ? `${keySetId}:${keyId}` : keyId,
+    };
+  }
+  return null;
+}
+
+function isSameActor(a: QuestionSetActor | null, b: QuestionSetActor | null) {
+  if (!a || !b) return false;
+  return a.type === b.type && a.id === b.id;
+}
 
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
@@ -90,9 +142,7 @@ router.post("/", express.json(), async (req, res) => {
   const logger = initStream(res);
   const { sendEvent, sendError, sendLog } = logger;
 
-  const permissions = (res.locals.documentPermissions as
-    | Record<string, boolean>
-    | undefined) ?? { createQuestionSet: false };
+  const permissions = getDocumentPermissions(res);
   if (!permissions.createQuestionSet) {
     res.status(403);
     sendError(new Error("API key is not permitted to create question sets."));
@@ -256,6 +306,8 @@ router.post("/", express.json(), async (req, res) => {
     const source = usageSource === "ui" ? "ui" : "api";
     const userEmail = user?.email;
 
+    const actor = resolveActor(res);
+    const timestamp = new Date().toISOString();
     await saveQuestionSet(orgId, {
       originalUserInput: changeRequest,
       questions: finalizedFields,
@@ -264,6 +316,12 @@ router.post("/", express.json(), async (req, res) => {
       snippetType,
       title,
       id,
+      status: "draft",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      finalizedAt: null,
+      createdBy: actor,
+      lastModifiedBy: actor,
     });
 
     sendLog(`Saved question set with title "${title}"`);
@@ -299,29 +357,155 @@ router.post("/", express.json(), async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.put("/:id", express.json(), async (req, res) => {
   const { id } = req.params;
   const { orgId } = res.locals as { orgId: string };
-  const permissions = (res.locals.documentPermissions as
-    | Record<string, boolean>
-    | undefined) ?? { createQuestionSet: false };
-  if (!permissions.createQuestionSet) {
-    res.status(403).json({ error: "API key is not permitted to manage question sets" });
+  try {
+    const permissions = getDocumentPermissions(res);
+    const actor = resolveActor(res);
+    const existing = await loadQuestionSet(orgId, id);
+    const canEditExisting = permissions.editQuestionSet;
+    const canEditDraft =
+      existing.status === "draft" && isSameActor(existing.createdBy, actor);
+    if (!canEditExisting && !canEditDraft) {
+      res
+        .status(403)
+        .json({ error: "Insufficient permissions to edit this question set" });
+      return;
+    }
+    const {
+      title,
+      snippetType,
+      executionPlan,
+      executionPlanReasoning,
+      questions,
+      originalUserInput,
+    } = req.body as Partial<QuestionSet>;
+
+    const timestamp = new Date().toISOString();
+    const updated = await updateQuestionSet(orgId, id, (record) => ({
+      ...record,
+      title: typeof title === "string" ? title : record.title,
+      snippetType: typeof snippetType === "string" ? snippetType : record.snippetType,
+      executionPlan:
+        typeof executionPlan === "string" ? executionPlan : record.executionPlan,
+      executionPlanReasoning:
+        typeof executionPlanReasoning === "string"
+          ? executionPlanReasoning
+          : record.executionPlanReasoning,
+      questions: Array.isArray(questions) ? (questions as QuestionSet["questions"]) : record.questions,
+      originalUserInput:
+        typeof originalUserInput === "string"
+          ? originalUserInput
+          : record.originalUserInput,
+      updatedAt: timestamp,
+      lastModifiedBy: actor ?? record.lastModifiedBy ?? record.createdBy,
+    }));
+    res.json(updated);
+  } catch (err: any) {
+    console.error(err);
+    if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: err.message ?? "Failed to update question set" });
+  }
+});
+
+router.post("/:id/finalize", async (req, res) => {
+  const { id } = req.params;
+  const { orgId } = res.locals as { orgId: string };
+  try {
+    const permissions = getDocumentPermissions(res);
+    const actor = resolveActor(res);
+    const existing = await loadQuestionSet(orgId, id);
+    if (existing.status !== "draft") {
+      res.status(400).json({ error: "Question set is already finalized" });
+      return;
+    }
+    const canFinalize = permissions.manageQuestionSetActivation;
+    const canFinalizeOwn = isSameActor(existing.createdBy, actor);
+    if (!canFinalize && !canFinalizeOwn) {
+      res
+        .status(403)
+        .json({ error: "Insufficient permissions to finalize this question set" });
+      return;
+    }
+    const finalized = await finalizeQuestionSet(orgId, id, actor);
+    res.json(finalized);
+  } catch (err: any) {
+    console.error(err);
+    if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: err.message ?? "Failed to finalize question set" });
+  }
+});
+
+router.post("/:id/activation", express.json(), async (req, res) => {
+  const { id } = req.params;
+  const { orgId } = res.locals as { orgId: string };
+  const { active } = req.body as { active?: unknown };
+  if (typeof active !== "boolean") {
+    res.status(400).json({ error: "Request body must include an 'active' boolean" });
     return;
   }
   try {
+    const permissions = getDocumentPermissions(res);
+    if (!permissions.manageQuestionSetActivation) {
+      res
+        .status(403)
+        .json({ error: "Insufficient permissions to change activation state" });
+      return;
+    }
+    const actor = resolveActor(res);
+    const existing = await loadQuestionSet(orgId, id);
+    if (existing.status === "draft") {
+      res.status(400).json({ error: "Draft question sets must be finalized first" });
+      return;
+    }
+    const updated = await setQuestionSetActivation(orgId, id, active, actor);
+    res.json(updated);
+  } catch (err: any) {
+    console.error(err);
+    if (err.message?.includes("not been finalized")) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err.message?.includes("not found")) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: err.message ?? "Failed to change activation" });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+  const { orgId } = res.locals as { orgId: string };
+  try {
+    const permissions = getDocumentPermissions(res);
+    const actor = resolveActor(res);
+    const existing = await loadQuestionSet(orgId, id);
+    const canDeleteAny = permissions.editQuestionSet;
+    const canDeleteOwnDraft =
+      existing.status === "draft" && isSameActor(existing.createdBy, actor);
+    if (!canDeleteAny && !canDeleteOwnDraft) {
+      res
+        .status(403)
+        .json({ error: "Insufficient permissions to delete this question set" });
+      return;
+    }
     await softDeleteQuestionSet(orgId, id);
-    // Successful soft delete: no content
     res.sendStatus(204);
   } catch (err: any) {
     console.error(err);
-    // If the question set wasn't found, return 404
-    if (err.message.includes("not found")) {
+    if (err.message?.includes("not found")) {
       res.status(404).json({ error: err.message });
-    } else {
-      // For other errors, return 500
-      res.status(500).json({ error: err.message });
+      return;
     }
+    res.status(500).json({ error: err.message ?? "Failed to delete question set" });
   }
 });
 export default router;

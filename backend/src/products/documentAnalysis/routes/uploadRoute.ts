@@ -135,7 +135,18 @@ router.post("/", upload, async (req, res) => {
         title,
         id,
         executionPlanReasoning,
+        status,
       } = await loadQuestionSet(orgId, questionSetId);
+
+      if (status !== "active") {
+        sendError(
+          new Error(
+            "Question set must be active before snippets can be evaluated.",
+          ),
+        );
+        res.end();
+        return;
+      }
 
       if (!questions.length) {
         sendEvent("error", { message: "No questions defined." });
@@ -198,9 +209,19 @@ router.post("/", upload, async (req, res) => {
     sendLog(`Received ${snippets.length} snippets.`);
 
     // Load question set
-      const questionSet = await loadQuestionSet(orgId, questionSetId);
+    const questionSet = await loadQuestionSet(orgId, questionSetId);
     if (!questionSet) {
       sendError(new Error(`Question set with ID ${questionSetId} not found.`));
+      res.end();
+      return;
+    }
+
+    if (questionSet.status !== "active") {
+      sendError(
+        new Error(
+          "Question set must be active before snippets can be evaluated.",
+        ),
+      );
       res.end();
       return;
     }
