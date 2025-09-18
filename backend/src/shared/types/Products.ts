@@ -90,9 +90,9 @@ export const PRODUCT_CATALOG: ProductDefinition<ProductKeyConfig>[] = [
   },
   {
     id: INSIGHTS_SANDBOX_PRODUCT_ID,
-    name: "Insights Sandbox",
+    name: "CV parser",
     description:
-      "Placeholder for the upcoming insights workspace. Used to stage analytics access policies before launch.",
+      "It will take CV inputs and output structured data with all relevant info from the resume.",
     defaultConfig: createDefaultInsightsSandboxConfig(),
   },
   {

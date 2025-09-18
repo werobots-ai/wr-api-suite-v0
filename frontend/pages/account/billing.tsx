@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import KeyRevealModal from "@/components/KeyRevealModal";
+import Modal from "@/components/Modal";
 import UsageBreakdown from "@/components/UsageBreakdown";
 import { fetchJSON } from "@/lib/api";
 import { OrgRole, SafeApiKey, SafeKeySet, SafeUser, UsageEntry } from "@/types/account";
@@ -93,7 +94,17 @@ export default function BillingPage() {
     description: "",
     products: buildInitialProducts(),
   }));
+  const [createSetModalOpen, setCreateSetModalOpen] = useState(false);
+  const [createSetError, setCreateSetError] = useState<string | null>(null);
+  const [isCreatingKeySet, setIsCreatingKeySet] = useState(false);
   const [revealModal, setRevealModal] = useState<KeyReveal | null>(null);
+  const [pendingRotation, setPendingRotation] = useState<{
+    setId: string;
+    setName: string;
+    index: number;
+  } | null>(null);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+  const [isRotatingKey, setIsRotatingKey] = useState(false);
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [memberForm, setMemberForm] = useState({
     email: "",
@@ -174,6 +185,31 @@ export default function BillingPage() {
     },
     [buildInitialProducts],
   );
+
+  const resetNewSetForm = useCallback(() => {
+    setNewSet({
+      name: "",
+      description: "",
+      products: buildInitialProducts(),
+    });
+  }, [buildInitialProducts]);
+
+  const openCreateSetModal = useCallback(() => {
+    setCreateSetError(null);
+    resetNewSetForm();
+    setCreateSetModalOpen(true);
+  }, [resetNewSetForm]);
+
+  const closeCreateSetModal = useCallback(() => {
+    setCreateSetModalOpen(false);
+    setCreateSetError(null);
+    resetNewSetForm();
+  }, [resetNewSetForm]);
+
+  const closeRotateModal = useCallback(() => {
+    setPendingRotation(null);
+    setRotateError(null);
+  }, []);
 
   const canManageKeys = Boolean(permissions?.manageKeys);
   const canManageBilling = Boolean(permissions?.manageBilling);
@@ -272,43 +308,70 @@ export default function BillingPage() {
     await refreshAccount();
   };
 
-  const handleRotate = async (setId: string, setName: string, index: number) => {
-    if (!canManageKeys) return;
-    const result = await fetchJSON<{
-      apiKey: string;
-      key: SafeApiKey;
-    }>(`${API_URL}/api/account/keysets/${setId}/keys/${index}/rotate`, {
-      method: "POST",
-    });
-    setRevealModal({
-      keys: [result.apiKey],
-      context: `API key for "${setName}" rotated. The previous key is now inactive. Save this value in your secrets manager before closing this dialog.`,
-      title: "API key rotated",
-    });
-    await refreshAccount();
+  const handleRotate = useCallback(
+    async (setId: string, setName: string, index: number) => {
+      if (!canManageKeys) return;
+      const result = await fetchJSON<{
+        apiKey: string;
+        key: SafeApiKey;
+      }>(`${API_URL}/api/account/keysets/${setId}/keys/${index}/rotate`, {
+        method: "POST",
+      });
+      setRevealModal({
+        keys: [result.apiKey],
+        context: `API key for "${setName}" rotated. The previous key is now inactive. Save this value in your secrets manager before closing this dialog.`,
+        title: "API key rotated",
+      });
+      await refreshAccount();
+    },
+    [canManageKeys, refreshAccount],
+  );
+
+  const handleConfirmRotate = async () => {
+    if (!pendingRotation || isRotatingKey) return;
+    setRotateError(null);
+    setIsRotatingKey(true);
+    try {
+      await handleRotate(
+        pendingRotation.setId,
+        pendingRotation.setName,
+        pendingRotation.index,
+      );
+      closeRotateModal();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setRotateError(message || "Failed to rotate key.");
+    } finally {
+      setIsRotatingKey(false);
+    }
   };
 
   const handleAddKeySet = async () => {
-    if (!canManageKeys || !newSet.name) return;
-    const result = await fetchJSON<{
-      keySet: SafeKeySet;
-      revealedKeys: string[];
-    }>(`${API_URL}/api/account/keysets`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newSet),
-    });
-    setNewSet({
-      name: "",
-      description: "",
-      products: buildInitialProducts(),
-    });
-    setRevealModal({
-      keys: result.revealedKeys,
-      context: `Key set "${result.keySet.name}" created. Share these values only with trusted clients and store them securely.`,
-      title: "New API keys issued",
-    });
-    await refreshAccount();
+    if (!canManageKeys || !newSet.name || isCreatingKeySet) return;
+    setCreateSetError(null);
+    setIsCreatingKeySet(true);
+    try {
+      const result = await fetchJSON<{
+        keySet: SafeKeySet;
+        revealedKeys: string[];
+      }>(`${API_URL}/api/account/keysets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSet),
+      });
+      setRevealModal({
+        keys: result.revealedKeys,
+        context: `Key set "${result.keySet.name}" created. Share these values only with trusted clients and store them securely.`,
+        title: "New API keys issued",
+      });
+      closeCreateSetModal();
+      await refreshAccount();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCreateSetError(message || "Failed to create key set.");
+    } finally {
+      setIsCreatingKeySet(false);
+    }
   };
 
   const handleRemoveKeySet = async (id: string) => {
@@ -516,6 +579,263 @@ export default function BillingPage() {
         title={revealModal?.title ?? "Secrets generated"}
         onClose={() => setRevealModal(null)}
       />
+      <Modal
+        isOpen={createSetModalOpen}
+        onClose={() => {
+          if (isCreatingKeySet) return;
+          closeCreateSetModal();
+        }}
+        title="Create API key set"
+        footer={
+          <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={closeCreateSetModal}
+              disabled={isCreatingKeySet}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleAddKeySet()}
+              disabled={!newSet.name || isCreatingKeySet}
+            >
+              {isCreatingKeySet ? "Creating..." : "Create key set"}
+            </button>
+          </>
+        }
+      >
+        <div className="keyset-form">
+          {createSetError && <div className="notice error">{createSetError}</div>}
+          <label>
+            Name
+            <input
+              type="text"
+              value={newSet.name}
+              onChange={(e) => setNewSet({ ...newSet, name: e.target.value })}
+              placeholder="Name"
+            />
+          </label>
+          <label>
+            Description
+            <input
+              type="text"
+              value={newSet.description}
+              onChange={(e) =>
+                setNewSet({ ...newSet, description: e.target.value })
+              }
+              placeholder="Description"
+            />
+          </label>
+          <div className="product-configurations">
+            {documentProductConfig &&
+              isDocumentAnalysisConfig(documentProductConfig) && (
+                <fieldset className="product-fieldset">
+                  <legend>
+                    {resolveProductName(DOCUMENT_ANALYSIS_PRODUCT_ID)}
+                  </legend>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={
+                        documentProductConfig.permissions.createQuestionSet
+                      }
+                      onChange={(e) =>
+                        updateProductConfig(
+                          DOCUMENT_ANALYSIS_PRODUCT_ID,
+                          (config) => {
+                            if (!isDocumentAnalysisConfig(config)) return config;
+                            return {
+                              ...config,
+                              permissions: {
+                                ...config.permissions,
+                                createQuestionSet: e.target.checked,
+                              },
+                            };
+                          },
+                        )
+                      }
+                    />
+                    Allow question set creation
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={
+                        documentProductConfig.permissions.evaluateDocument
+                      }
+                      onChange={(e) =>
+                        updateProductConfig(
+                          DOCUMENT_ANALYSIS_PRODUCT_ID,
+                          (config) => {
+                            if (!isDocumentAnalysisConfig(config)) return config;
+                            return {
+                              ...config,
+                              permissions: {
+                                ...config.permissions,
+                                evaluateDocument: e.target.checked,
+                              },
+                            };
+                          },
+                        )
+                      }
+                    />
+                    Allow document evaluation
+                  </label>
+                </fieldset>
+              )}
+            {insightsProductConfig &&
+              isInsightsSandboxConfig(insightsProductConfig) && (
+                <fieldset className="product-fieldset">
+                  <legend>
+                    {resolveProductName(INSIGHTS_SANDBOX_PRODUCT_ID)}
+                  </legend>
+                  <label>
+                    Access level
+                    <select
+                      value={insightsProductConfig.options.accessLevel}
+                      onChange={(e) =>
+                        updateProductConfig(
+                          INSIGHTS_SANDBOX_PRODUCT_ID,
+                          (config) => {
+                            if (!isInsightsSandboxConfig(config)) return config;
+                            return {
+                              ...config,
+                              options: {
+                                ...config.options,
+                                accessLevel: e.target.value as
+                                  | "none"
+                                  | "read"
+                                  | "write",
+                              },
+                            };
+                          },
+                        )
+                      }
+                    >
+                      <option value="none">No access</option>
+                      <option value="read">Read-only</option>
+                      <option value="write">Full access</option>
+                    </select>
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={insightsProductConfig.options.betaFeatures}
+                      onChange={(e) =>
+                        updateProductConfig(
+                          INSIGHTS_SANDBOX_PRODUCT_ID,
+                          (config) => {
+                            if (!isInsightsSandboxConfig(config)) return config;
+                            return {
+                              ...config,
+                              options: {
+                                ...config.options,
+                                betaFeatures: e.target.checked,
+                              },
+                            };
+                          },
+                        )
+                      }
+                    />
+                    Enable beta features
+                  </label>
+                </fieldset>
+              )}
+            {apiProductConfig && isApiPlatformConfig(apiProductConfig) && (
+              <fieldset className="product-fieldset">
+                <legend>{resolveProductName(API_PLATFORM_PRODUCT_ID)}</legend>
+                <label>
+                  Environment
+                  <select
+                    value={apiProductConfig.options.environment}
+                    onChange={(e) =>
+                      updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
+                        if (!isApiPlatformConfig(config)) return config;
+                        return {
+                          ...config,
+                          options: {
+                            ...config.options,
+                            environment: e.target.value as
+                              | "sandbox"
+                              | "production",
+                          },
+                        };
+                      })
+                    }
+                  >
+                    <option value="sandbox">Sandbox</option>
+                    <option value="production">Production</option>
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={apiProductConfig.options.allowModelTraining}
+                    onChange={(e) =>
+                      updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
+                        if (!isApiPlatformConfig(config)) return config;
+                        return {
+                          ...config,
+                          options: {
+                            ...config.options,
+                            allowModelTraining: e.target.checked,
+                          },
+                        };
+                      })
+                    }
+                  />
+                  Allow model training
+                </label>
+              </fieldset>
+            )}
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        isOpen={Boolean(pendingRotation)}
+        onClose={() => {
+          if (isRotatingKey) return;
+          closeRotateModal();
+        }}
+        title="Rotate API key?"
+        footer={
+          <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={closeRotateModal}
+              disabled={isRotatingKey}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleConfirmRotate()}
+              disabled={isRotatingKey}
+            >
+              {isRotatingKey ? "Rotating..." : "Rotate key"}
+            </button>
+          </>
+        }
+      >
+        <div className="rotate-modal">
+          {rotateError && <div className="notice error">{rotateError}</div>}
+          <p>
+            Rotating this key will immediately deactivate the previous value and
+            cannot be undone.
+          </p>
+          <p>
+            Make sure any applications using
+            {" "}
+            <strong>{pendingRotation?.setName}</strong>
+            {" "}
+            are ready to update their configuration. The new key will be shown
+            once—store it in your secrets manager.
+          </p>
+        </div>
+      </Modal>
       <div className="layout">
         <aside className="section-nav">
           <h2>Account index</h2>
@@ -657,7 +977,16 @@ export default function BillingPage() {
                         </div>
                         <div className="key-actions">
                           {canManageKeys && (
-                            <button onClick={() => handleRotate(set.id, set.name, idx)}>
+                            <button
+                              onClick={() => {
+                                setRotateError(null);
+                                setPendingRotation({
+                                  setId: set.id,
+                                  setName: set.name,
+                                  index: idx,
+                                });
+                              }}
+                            >
                               Rotate
                             </button>
                           )}
@@ -679,178 +1008,9 @@ export default function BillingPage() {
               <p className="hint">No key sets have been created yet.</p>
             )}
             {canManageKeys && (
-              <div className="add-set">
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={newSet.name}
-                  onChange={(e) => setNewSet({ ...newSet, name: e.target.value })}
-                />
-                <input
-                  type="text"
-                  placeholder="Description"
-                  value={newSet.description}
-                  onChange={(e) => setNewSet({ ...newSet, description: e.target.value })}
-                />
-                {documentProductConfig &&
-                  isDocumentAnalysisConfig(documentProductConfig) && (
-                    <fieldset className="product-fieldset">
-                      <legend>
-                        {resolveProductName(DOCUMENT_ANALYSIS_PRODUCT_ID)}
-                      </legend>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={documentProductConfig.permissions.createQuestionSet}
-                          onChange={(e) =>
-                            updateProductConfig(
-                              DOCUMENT_ANALYSIS_PRODUCT_ID,
-                              (config) => {
-                                if (!isDocumentAnalysisConfig(config)) return config;
-                                return {
-                                  ...config,
-                                  permissions: {
-                                    ...config.permissions,
-                                    createQuestionSet: e.target.checked,
-                                  },
-                                };
-                              },
-                            )
-                          }
-                        />
-                        Allow question set creation
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={documentProductConfig.permissions.evaluateDocument}
-                          onChange={(e) =>
-                            updateProductConfig(
-                              DOCUMENT_ANALYSIS_PRODUCT_ID,
-                              (config) => {
-                                if (!isDocumentAnalysisConfig(config)) return config;
-                                return {
-                                  ...config,
-                                  permissions: {
-                                    ...config.permissions,
-                                    evaluateDocument: e.target.checked,
-                                  },
-                                };
-                              },
-                            )
-                          }
-                        />
-                        Allow document evaluation
-                      </label>
-                    </fieldset>
-                  )}
-                {insightsProductConfig &&
-                  isInsightsSandboxConfig(insightsProductConfig) && (
-                    <fieldset className="product-fieldset">
-                      <legend>
-                        {resolveProductName(INSIGHTS_SANDBOX_PRODUCT_ID)}
-                      </legend>
-                      <label>
-                        Access level
-                        <select
-                          value={insightsProductConfig.options.accessLevel}
-                          onChange={(e) =>
-                            updateProductConfig(
-                              INSIGHTS_SANDBOX_PRODUCT_ID,
-                              (config) => {
-                                if (!isInsightsSandboxConfig(config)) return config;
-                                return {
-                                  ...config,
-                                  options: {
-                                    ...config.options,
-                                    accessLevel: e.target.value as
-                                      | "none"
-                                      | "read"
-                                      | "write",
-                                  },
-                                };
-                              },
-                            )
-                          }
-                        >
-                          <option value="none">No access</option>
-                          <option value="read">Read-only</option>
-                          <option value="write">Full access</option>
-                        </select>
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={insightsProductConfig.options.betaFeatures}
-                          onChange={(e) =>
-                            updateProductConfig(
-                              INSIGHTS_SANDBOX_PRODUCT_ID,
-                              (config) => {
-                                if (!isInsightsSandboxConfig(config)) return config;
-                                return {
-                                  ...config,
-                                  options: {
-                                    ...config.options,
-                                    betaFeatures: e.target.checked,
-                                  },
-                                };
-                              },
-                            )
-                          }
-                        />
-                        Enable beta features
-                      </label>
-                    </fieldset>
-                  )}
-                {apiProductConfig && isApiPlatformConfig(apiProductConfig) && (
-                  <fieldset className="product-fieldset">
-                    <legend>{resolveProductName(API_PLATFORM_PRODUCT_ID)}</legend>
-                    <label>
-                      Environment
-                      <select
-                        value={apiProductConfig.options.environment}
-                        onChange={(e) =>
-                          updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
-                            if (!isApiPlatformConfig(config)) return config;
-                            return {
-                              ...config,
-                              options: {
-                                ...config.options,
-                                environment: e.target.value as
-                                  | "sandbox"
-                                  | "production",
-                              },
-                            };
-                          })
-                        }
-                      >
-                        <option value="sandbox">Sandbox</option>
-                        <option value="production">Production</option>
-                      </select>
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={apiProductConfig.options.allowModelTraining}
-                        onChange={(e) =>
-                          updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
-                            if (!isApiPlatformConfig(config)) return config;
-                            return {
-                              ...config,
-                              options: {
-                                ...config.options,
-                                allowModelTraining: e.target.checked,
-                              },
-                            };
-                          })
-                        }
-                      />
-                      Allow model training
-                    </label>
-                  </fieldset>
-                )}
-                <button onClick={handleAddKeySet} disabled={!newSet.name}>
-                  Add Key Set
+              <div className="add-set-trigger">
+                <button type="button" onClick={openCreateSetModal}>
+                  Add key set
                 </button>
               </div>
             )}
@@ -1440,24 +1600,80 @@ export default function BillingPage() {
           color: #bfbfbf;
           margin: 0 0.25rem;
         }
-        .add-set {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
+        .add-set-trigger {
           margin-top: 0.75rem;
         }
-        .add-set input {
-          padding: 0.5rem;
-          border: 1px solid #d9d9d9;
-          border-radius: 4px;
-        }
-        .add-set button {
+        .add-set-trigger button {
           padding: 0.5rem 1rem;
           border: none;
           border-radius: 4px;
           background: #1890ff;
           color: #fff;
           cursor: pointer;
+        }
+        .add-set-trigger button:hover {
+          background: #096dd9;
+        }
+        .keyset-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .keyset-form label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          font-weight: 500;
+        }
+        .keyset-form input,
+        .keyset-form select {
+          padding: 0.5rem;
+          border: 1px solid #d9d9d9;
+          border-radius: 4px;
+        }
+        .keyset-form fieldset {
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          padding: 0.75rem 1rem;
+        }
+        .keyset-form fieldset legend {
+          font-weight: 600;
+        }
+        .product-configurations {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .rotate-modal {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          line-height: 1.5;
+        }
+        :global(.wr-modal-footer button) {
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
+          border: none;
+          cursor: pointer;
+        }
+        :global(.wr-modal-footer button:disabled) {
+          cursor: not-allowed;
+          opacity: 0.7;
+        }
+        :global(.wr-modal-footer button:not(.secondary)) {
+          background: #1890ff;
+          color: #fff;
+        }
+        :global(.wr-modal-footer button:not(.secondary):not(:disabled):hover) {
+          background: #096dd9;
+        }
+        :global(.wr-modal-footer button.secondary) {
+          background: #f0f0f0;
+          color: #555;
+        }
+        :global(.wr-modal-footer button.secondary:not(:disabled):hover) {
+          background: #d9d9d9;
+          color: #000;
         }
         table {
           width: 100%;

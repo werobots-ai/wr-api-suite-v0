@@ -10,7 +10,7 @@ export function createInsightsSandboxApp() {
   });
 
   app.get("/api/insights", (_req, res) => {
-    res.status(501).json({ error: "Insights Sandbox API is not yet implemented" });
+    res.status(501).json({ error: "CV parser API is not yet implemented" });
   });
 
   return app;
