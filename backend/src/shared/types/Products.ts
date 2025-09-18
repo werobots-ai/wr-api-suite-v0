@@ -1,10 +1,12 @@
 export const DOCUMENT_ANALYSIS_PRODUCT_ID = "document-analysis" as const;
-export const INSIGHTS_SANDBOX_PRODUCT_ID = "insights-sandbox" as const;
+export const CV_PARSER_PRODUCT_ID = "cv-parser" as const;
+// Temporary alias to migrate previously stored product IDs.
+export const LEGACY_CV_PARSER_PRODUCT_ID = "insights-sandbox" as const;
 export const API_PLATFORM_PRODUCT_ID = "api-platform" as const;
 
 export type ProductId =
   | typeof DOCUMENT_ANALYSIS_PRODUCT_ID
-  | typeof INSIGHTS_SANDBOX_PRODUCT_ID
+  | typeof CV_PARSER_PRODUCT_ID
   | typeof API_PLATFORM_PRODUCT_ID;
 
 export type DocumentAnalysisPermission =
@@ -16,8 +18,8 @@ export interface DocumentAnalysisProductConfig {
   permissions: Record<DocumentAnalysisPermission, boolean>;
 }
 
-export interface InsightsSandboxProductConfig {
-  productId: typeof INSIGHTS_SANDBOX_PRODUCT_ID;
+export interface CvParserProductConfig {
+  productId: typeof CV_PARSER_PRODUCT_ID;
   options: {
     accessLevel: "none" | "read" | "write";
     betaFeatures: boolean;
@@ -34,7 +36,7 @@ export interface ApiPlatformProductConfig {
 
 export type ProductKeyConfig =
   | DocumentAnalysisProductConfig
-  | InsightsSandboxProductConfig
+  | CvParserProductConfig
   | ApiPlatformProductConfig;
 
 export interface ProductDefinition<TConfig extends ProductKeyConfig> {
@@ -56,11 +58,11 @@ export function createDefaultDocumentAnalysisConfig(
   };
 }
 
-export function createDefaultInsightsSandboxConfig(
-  overrides: Partial<InsightsSandboxProductConfig["options"]> = {},
-): InsightsSandboxProductConfig {
+export function createDefaultCvParserConfig(
+  overrides: Partial<CvParserProductConfig["options"]> = {},
+): CvParserProductConfig {
   return {
-    productId: INSIGHTS_SANDBOX_PRODUCT_ID,
+    productId: CV_PARSER_PRODUCT_ID,
     options: {
       accessLevel: overrides.accessLevel ?? "none",
       betaFeatures: Boolean(overrides.betaFeatures),
@@ -89,11 +91,11 @@ export const PRODUCT_CATALOG: ProductDefinition<ProductKeyConfig>[] = [
     defaultConfig: createDefaultDocumentAnalysisConfig(),
   },
   {
-    id: INSIGHTS_SANDBOX_PRODUCT_ID,
-    name: "Insights Sandbox",
+    id: CV_PARSER_PRODUCT_ID,
+    name: "CV parser",
     description:
-      "Placeholder for the upcoming insights workspace. Used to stage analytics access policies before launch.",
-    defaultConfig: createDefaultInsightsSandboxConfig(),
+      "It will take CV inputs and output structured data with all relevant info from the resume.",
+    defaultConfig: createDefaultCvParserConfig(),
   },
   {
     id: API_PLATFORM_PRODUCT_ID,
@@ -110,10 +112,10 @@ export function isDocumentAnalysisConfig(
   return config.productId === DOCUMENT_ANALYSIS_PRODUCT_ID;
 }
 
-export function isInsightsSandboxConfig(
+export function isCvParserConfig(
   config: ProductKeyConfig,
-): config is InsightsSandboxProductConfig {
-  return config.productId === INSIGHTS_SANDBOX_PRODUCT_ID;
+): config is CvParserProductConfig {
+  return config.productId === CV_PARSER_PRODUCT_ID;
 }
 
 export function isApiPlatformConfig(
