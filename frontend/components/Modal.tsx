@@ -79,25 +79,25 @@ export default function Modal({
   const shouldRenderHeader = Boolean(title) || showCloseButton;
 
   return createPortal(
-    <div className="modal-overlay" role="presentation" onClick={onClose}>
+    <div className="wr-modal-overlay" role="presentation" onClick={onClose}>
       <div
-        className={`modal ${className ?? ""}`.trim()}
+        className={`wr-modal ${className ?? ""}`.trim()}
         role="dialog"
         aria-modal="true"
         {...(title ? { "aria-labelledby": labelId } : {})}
         onClick={(event) => event.stopPropagation()}
       >
         {shouldRenderHeader && (
-          <header className="modal-header">
+          <header className="wr-modal-header">
             {title && (
-              <div className="modal-title" id={labelId}>
+              <div className="wr-modal-title" id={labelId}>
                 {title}
               </div>
             )}
             {showCloseButton && (
               <button
                 type="button"
-                className="modal-close"
+                className="wr-modal-close"
                 onClick={onClose}
                 aria-label={closeLabel}
               >
@@ -106,10 +106,10 @@ export default function Modal({
             )}
           </header>
         )}
-        <div className={`modal-body ${bodyClassName ?? ""}`.trim()}>{children}</div>
-        {footer && <footer className="modal-footer">{footer}</footer>}
-        <style jsx>{`
-          .modal-overlay {
+        <div className={`wr-modal-body ${bodyClassName ?? ""}`.trim()}>{children}</div>
+        {footer && <footer className="wr-modal-footer">{footer}</footer>}
+        <style jsx global>{`
+          .wr-modal-overlay {
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.55);
@@ -119,7 +119,7 @@ export default function Modal({
             z-index: 2000;
             padding: 1.5rem;
           }
-          .modal {
+          .wr-modal {
             background: #fff;
             border-radius: 8px;
             box-shadow: 0 20px 45px rgba(0, 0, 0, 0.2);
@@ -129,7 +129,7 @@ export default function Modal({
             flex-direction: column;
             overflow: hidden;
           }
-          .modal-header {
+          .wr-modal-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -137,11 +137,11 @@ export default function Modal({
             border-bottom: 1px solid #f0f0f0;
             gap: 1rem;
           }
-          .modal-title {
+          .wr-modal-title {
             font-size: 1.25rem;
             font-weight: 600;
           }
-          .modal-close {
+          .wr-modal-close {
             border: none;
             background: transparent;
             font-size: 1.5rem;
@@ -149,14 +149,14 @@ export default function Modal({
             line-height: 1;
             color: #888;
           }
-          .modal-close:hover {
+          .wr-modal-close:hover {
             color: #000;
           }
-          .modal-body {
+          .wr-modal-body {
             padding: 1rem 1.25rem;
             overflow-y: auto;
           }
-          .modal-footer {
+          .wr-modal-footer {
             padding: 1rem 1.25rem 1.25rem;
             border-top: 1px solid #f0f0f0;
             display: flex;
