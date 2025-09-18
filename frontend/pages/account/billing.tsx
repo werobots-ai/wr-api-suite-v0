@@ -43,6 +43,172 @@ type NewKeySetForm = {
   products: ProductKeyConfig[];
 };
 
+type ProductAccessConfiguratorProps = {
+  products: ProductKeyConfig[];
+  onUpdate: (
+    productId: string,
+    updater: (config: ProductKeyConfig) => ProductKeyConfig,
+  ) => void;
+  resolveProductName: (productId: string) => string;
+};
+
+function ProductAccessConfigurator({
+  products,
+  onUpdate,
+  resolveProductName,
+}: ProductAccessConfiguratorProps) {
+  const documentProductConfig = products.find(
+    (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
+  );
+  const cvParserProductConfig = products.find(
+    (product) => product.productId === CV_PARSER_PRODUCT_ID,
+  );
+  const apiProductConfig = products.find(
+    (product) => product.productId === API_PLATFORM_PRODUCT_ID,
+  );
+
+  return (
+    <div className="product-configurations">
+      {documentProductConfig &&
+        isDocumentAnalysisConfig(documentProductConfig) && (
+          <fieldset className="product-fieldset">
+            <legend>{resolveProductName(DOCUMENT_ANALYSIS_PRODUCT_ID)}</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={documentProductConfig.permissions.createQuestionSet}
+                onChange={(e) =>
+                  onUpdate(DOCUMENT_ANALYSIS_PRODUCT_ID, (config) => {
+                    if (!isDocumentAnalysisConfig(config)) return config;
+                    return {
+                      ...config,
+                      permissions: {
+                        ...config.permissions,
+                        createQuestionSet: e.target.checked,
+                      },
+                    };
+                  })
+                }
+              />
+              Allow question set creation
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={documentProductConfig.permissions.evaluateDocument}
+                onChange={(e) =>
+                  onUpdate(DOCUMENT_ANALYSIS_PRODUCT_ID, (config) => {
+                    if (!isDocumentAnalysisConfig(config)) return config;
+                    return {
+                      ...config,
+                      permissions: {
+                        ...config.permissions,
+                        evaluateDocument: e.target.checked,
+                      },
+                    };
+                  })
+                }
+              />
+              Allow document evaluation
+            </label>
+          </fieldset>
+        )}
+      {cvParserProductConfig &&
+        isCvParserConfig(cvParserProductConfig) && (
+          <fieldset className="product-fieldset">
+            <legend>{resolveProductName(CV_PARSER_PRODUCT_ID)}</legend>
+            <label>
+              Access level
+              <select
+                value={cvParserProductConfig.options.accessLevel}
+                onChange={(e) =>
+                  onUpdate(CV_PARSER_PRODUCT_ID, (config) => {
+                    if (!isCvParserConfig(config)) return config;
+                    return {
+                      ...config,
+                      options: {
+                        ...config.options,
+                        accessLevel: e.target.value as "none" | "read" | "write",
+                      },
+                    };
+                  })
+                }
+              >
+                <option value="none">No access</option>
+                <option value="read">Read-only</option>
+                <option value="write">Full access</option>
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={cvParserProductConfig.options.betaFeatures}
+                onChange={(e) =>
+                  onUpdate(CV_PARSER_PRODUCT_ID, (config) => {
+                    if (!isCvParserConfig(config)) return config;
+                    return {
+                      ...config,
+                      options: {
+                        ...config.options,
+                        betaFeatures: e.target.checked,
+                      },
+                    };
+                  })
+                }
+              />
+              Enable beta features
+            </label>
+          </fieldset>
+        )}
+      {apiProductConfig && isApiPlatformConfig(apiProductConfig) && (
+        <fieldset className="product-fieldset">
+          <legend>{resolveProductName(API_PLATFORM_PRODUCT_ID)}</legend>
+          <label>
+            Environment
+            <select
+              value={apiProductConfig.options.environment}
+              onChange={(e) =>
+                onUpdate(API_PLATFORM_PRODUCT_ID, (config) => {
+                  if (!isApiPlatformConfig(config)) return config;
+                  return {
+                    ...config,
+                    options: {
+                      ...config.options,
+                      environment: e.target.value as "sandbox" | "production",
+                    },
+                  };
+                })
+              }
+            >
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={apiProductConfig.options.allowModelTraining}
+              onChange={(e) =>
+                onUpdate(API_PLATFORM_PRODUCT_ID, (config) => {
+                  if (!isApiPlatformConfig(config)) return config;
+                  return {
+                    ...config,
+                    options: {
+                      ...config.options,
+                      allowModelTraining: e.target.checked,
+                    },
+                  };
+                })
+              }
+            />
+            Allow model training
+          </label>
+        </fieldset>
+      )}
+    </div>
+  );
+}
+
 const ROLE_OPTIONS: { label: string; value: OrgRole }[] = [
   { label: "Owner", value: "OWNER" },
   { label: "Admin", value: "ADMIN" },
@@ -117,8 +283,11 @@ export default function BillingPage() {
     buildInitialProducts(),
   );
   const [memberMessage, setMemberMessage] = useState<string | null>(null);
-  const [memberError, setMemberError] = useState<string | null>(null);
+  const [memberListError, setMemberListError] = useState<string | null>(null);
+  const [memberFormError, setMemberFormError] = useState<string | null>(null);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [isSavingMember, setIsSavingMember] = useState(false);
 
   useEffect(() => {
     setNewSet((current) => {
@@ -231,24 +400,6 @@ export default function BillingPage() {
     }
     return normalizedId;
   };
-  const documentProductConfig = newSet.products.find(
-    (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
-  );
-  const cvParserProductConfig = newSet.products.find(
-    (product) => product.productId === CV_PARSER_PRODUCT_ID,
-  );
-  const apiProductConfig = newSet.products.find(
-    (product) => product.productId === API_PLATFORM_PRODUCT_ID,
-  );
-  const memberDocumentProduct = memberProducts.find(
-    (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
-  );
-  const memberCvParserProduct = memberProducts.find(
-    (product) => product.productId === CV_PARSER_PRODUCT_ID,
-  );
-  const memberApiProduct = memberProducts.find(
-    (product) => product.productId === API_PLATFORM_PRODUCT_ID,
-  );
   const renderProductSummary = (product: ProductKeyConfig) => {
     if (isDocumentAnalysisConfig(product)) {
       const grants = [] as string[];
@@ -286,7 +437,7 @@ export default function BillingPage() {
 
   const loadMembers = useCallback(async () => {
     if (!canViewMembers) return;
-    setMemberError(null);
+    setMemberListError(null);
     try {
       const response = await fetchJSON<{ members: MemberInfo[] }>(
         `${API_URL}/api/account/users`,
@@ -294,7 +445,7 @@ export default function BillingPage() {
       setMembers(response.members);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setMemberError(message || "Failed to load members");
+      setMemberListError(message || "Failed to load members");
     }
   }, [canViewMembers]);
 
@@ -407,45 +558,67 @@ export default function BillingPage() {
     setMemberForm({ email: "", name: "", roles: ["MEMBER"], password: "" });
     setMemberProducts(buildInitialProducts());
     setEditingMemberId(null);
+    setMemberFormError(null);
   }, [buildInitialProducts]);
 
+  const openMemberModalForCreate = useCallback(() => {
+    resetMemberForm();
+    setMemberModalOpen(true);
+  }, [resetMemberForm]);
+
+  const closeMemberModal = useCallback(() => {
+    if (isSavingMember) return;
+    setMemberModalOpen(false);
+    resetMemberForm();
+  }, [isSavingMember, resetMemberForm]);
+
   const handleSaveMember = async () => {
-    if (!canManageUsers) return;
+    if (!canManageUsers || isSavingMember) return;
     if (!memberForm.email || !memberForm.name) {
-      setMemberError("Name and email are required");
+      setMemberFormError("Name and email are required");
       return;
     }
     if (!memberForm.roles.length) {
-      setMemberError("Select at least one role");
+      setMemberFormError("Select at least one role");
       return;
     }
-    setMemberError(null);
+    const isEditing = Boolean(editingMemberId);
+    setMemberFormError(null);
     setMemberMessage(null);
-    const response = await fetchJSON<{
-      user: MemberInfo;
-      generatedPassword?: string;
-      isNewUser: boolean;
-    }>(`${API_URL}/api/account/users`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: memberForm.email,
-        name: memberForm.name,
-        roles: memberForm.roles,
-        password: memberForm.password || undefined,
-        productAccess: memberProducts,
-      }),
-    });
-    resetMemberForm();
-    await loadMembers();
-    if (response.generatedPassword) {
-      setMemberMessage(
-        `Generated password for ${response.user.email}: ${response.generatedPassword}. Share securely with the user.`,
-      );
-    } else if (editingMemberId) {
-      setMemberMessage("User updated. Permissions refreshed.");
-    } else {
-      setMemberMessage("User saved. They can now access the organization.");
+    setIsSavingMember(true);
+    try {
+      const response = await fetchJSON<{
+        user: MemberInfo;
+        generatedPassword?: string;
+        isNewUser: boolean;
+      }>(`${API_URL}/api/account/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: memberForm.email,
+          name: memberForm.name,
+          roles: memberForm.roles,
+          password: memberForm.password || undefined,
+          productAccess: memberProducts,
+        }),
+      });
+      await loadMembers();
+      setMemberModalOpen(false);
+      resetMemberForm();
+      if (response.generatedPassword) {
+        setMemberMessage(
+          `Generated password for ${response.user.email}: ${response.generatedPassword}. Share securely with the user.`,
+        );
+      } else if (isEditing) {
+        setMemberMessage("User updated. Permissions refreshed.");
+      } else {
+        setMemberMessage("User saved. They can now access the organization.");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setMemberFormError(message || "Failed to save member.");
+    } finally {
+      setIsSavingMember(false);
     }
   };
 
@@ -461,7 +634,8 @@ export default function BillingPage() {
       member.productAccess.map((config) => cloneProductConfig(config)),
     );
     setMemberMessage(null);
-    setMemberError(null);
+    setMemberFormError(null);
+    setMemberModalOpen(true);
   };
 
   const organizationUsage = useMemo<UsageEntry[]>(
@@ -641,169 +815,11 @@ export default function BillingPage() {
               placeholder="Description"
             />
           </label>
-          <div className="product-configurations">
-            {documentProductConfig &&
-              isDocumentAnalysisConfig(documentProductConfig) && (
-                <fieldset className="product-fieldset">
-                  <legend>
-                    {resolveProductName(DOCUMENT_ANALYSIS_PRODUCT_ID)}
-                  </legend>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={
-                        documentProductConfig.permissions.createQuestionSet
-                      }
-                      onChange={(e) =>
-                        updateProductConfig(
-                          DOCUMENT_ANALYSIS_PRODUCT_ID,
-                          (config) => {
-                            if (!isDocumentAnalysisConfig(config)) return config;
-                            return {
-                              ...config,
-                              permissions: {
-                                ...config.permissions,
-                                createQuestionSet: e.target.checked,
-                              },
-                            };
-                          },
-                        )
-                      }
-                    />
-                    Allow question set creation
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={
-                        documentProductConfig.permissions.evaluateDocument
-                      }
-                      onChange={(e) =>
-                        updateProductConfig(
-                          DOCUMENT_ANALYSIS_PRODUCT_ID,
-                          (config) => {
-                            if (!isDocumentAnalysisConfig(config)) return config;
-                            return {
-                              ...config,
-                              permissions: {
-                                ...config.permissions,
-                                evaluateDocument: e.target.checked,
-                              },
-                            };
-                          },
-                        )
-                      }
-                    />
-                    Allow document evaluation
-                  </label>
-                </fieldset>
-              )}
-            {cvParserProductConfig &&
-              isCvParserConfig(cvParserProductConfig) && (
-                <fieldset className="product-fieldset">
-                  <legend>
-                    {resolveProductName(CV_PARSER_PRODUCT_ID)}
-                  </legend>
-                  <label>
-                    Access level
-                    <select
-                      value={cvParserProductConfig.options.accessLevel}
-                      onChange={(e) =>
-                        updateProductConfig(
-                          CV_PARSER_PRODUCT_ID,
-                          (config) => {
-                            if (!isCvParserConfig(config)) return config;
-                            return {
-                              ...config,
-                              options: {
-                                ...config.options,
-                                accessLevel: e.target.value as
-                                  | "none"
-                                  | "read"
-                                  | "write",
-                              },
-                            };
-                          },
-                        )
-                      }
-                    >
-                      <option value="none">No access</option>
-                      <option value="read">Read-only</option>
-                      <option value="write">Full access</option>
-                    </select>
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={cvParserProductConfig.options.betaFeatures}
-                      onChange={(e) =>
-                        updateProductConfig(
-                          CV_PARSER_PRODUCT_ID,
-                          (config) => {
-                            if (!isCvParserConfig(config)) return config;
-                            return {
-                              ...config,
-                              options: {
-                                ...config.options,
-                                betaFeatures: e.target.checked,
-                              },
-                            };
-                          },
-                        )
-                      }
-                    />
-                    Enable beta features
-                  </label>
-                </fieldset>
-              )}
-            {apiProductConfig && isApiPlatformConfig(apiProductConfig) && (
-              <fieldset className="product-fieldset">
-                <legend>{resolveProductName(API_PLATFORM_PRODUCT_ID)}</legend>
-                <label>
-                  Environment
-                  <select
-                    value={apiProductConfig.options.environment}
-                    onChange={(e) =>
-                      updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
-                        if (!isApiPlatformConfig(config)) return config;
-                        return {
-                          ...config,
-                          options: {
-                            ...config.options,
-                            environment: e.target.value as
-                              | "sandbox"
-                              | "production",
-                          },
-                        };
-                      })
-                    }
-                  >
-                    <option value="sandbox">Sandbox</option>
-                    <option value="production">Production</option>
-                  </select>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={apiProductConfig.options.allowModelTraining}
-                    onChange={(e) =>
-                      updateProductConfig(API_PLATFORM_PRODUCT_ID, (config) => {
-                        if (!isApiPlatformConfig(config)) return config;
-                        return {
-                          ...config,
-                          options: {
-                            ...config.options,
-                            allowModelTraining: e.target.checked,
-                          },
-                        };
-                      })
-                    }
-                  />
-                  Allow model training
-                </label>
-              </fieldset>
-            )}
-          </div>
+          <ProductAccessConfigurator
+            products={newSet.products}
+            onUpdate={updateProductConfig}
+            resolveProductName={resolveProductName}
+          />
         </div>
       </Modal>
       <Modal
@@ -847,6 +863,100 @@ export default function BillingPage() {
             are ready to update their configuration. The new key will be shown
             once—store it in your secrets manager.
           </p>
+        </div>
+      </Modal>
+      <Modal
+        isOpen={memberModalOpen}
+        onClose={closeMemberModal}
+        title={editingMemberId ? "Update member" : "Add organization member"}
+        footer={
+          <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={closeMemberModal}
+              disabled={isSavingMember}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSaveMember()}
+              disabled={isSavingMember}
+            >
+              {isSavingMember
+                ? "Saving..."
+                : editingMemberId
+                ? "Update member"
+                : "Invite member"}
+            </button>
+          </>
+        }
+      >
+        <div className="member-form">
+          {memberFormError && <div className="notice error">{memberFormError}</div>}
+          <div className="form-grid">
+            <label>
+              Name
+              <input
+                type="text"
+                value={memberForm.name}
+                onChange={(e) =>
+                  setMemberForm({ ...memberForm, name: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                value={memberForm.email}
+                onChange={(e) =>
+                  setMemberForm({ ...memberForm, email: e.target.value })
+                }
+                disabled={Boolean(editingMemberId)}
+              />
+            </label>
+            <label>
+              Temporary password (optional)
+              <input
+                type="text"
+                value={memberForm.password}
+                onChange={(e) =>
+                  setMemberForm({ ...memberForm, password: e.target.value })
+                }
+              />
+            </label>
+          </div>
+          {editingMemberId && (
+            <p className="hint">
+              Editing permissions for <strong>{memberForm.email}</strong>.
+              Email cannot be changed while updating an existing account.
+            </p>
+          )}
+          <fieldset>
+            <legend>Roles</legend>
+            <div className="role-grid">
+              {ROLE_OPTIONS.map((role) => (
+                <label key={role.value}>
+                  <input
+                    type="checkbox"
+                    checked={memberForm.roles.includes(role.value)}
+                    onChange={() => toggleRole(role.value)}
+                  />
+                  {role.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="member-product-editor">
+            <h4>Product access</h4>
+            <ProductAccessConfigurator
+              products={memberProducts}
+              onUpdate={updateMemberProductConfig}
+              resolveProductName={resolveProductName}
+            />
+          </div>
         </div>
       </Modal>
       <div className="layout">
@@ -1054,9 +1164,16 @@ export default function BillingPage() {
 
           {canViewMembers && (
             <section id="section-members" className="card">
-              <h2>Organization members</h2>
+              <div className="member-header">
+                <h2>Organization members</h2>
+                {canManageUsers && (
+                  <button type="button" onClick={openMemberModalForCreate}>
+                    Add member
+                  </button>
+                )}
+              </div>
               {memberMessage && <div className="notice success">{memberMessage}</div>}
-              {memberError && <div className="notice error">{memberError}</div>}
+              {memberListError && <div className="notice error">{memberListError}</div>}
               <table>
                 <thead>
                   <tr>
@@ -1124,235 +1241,6 @@ export default function BillingPage() {
                   ))}
                 </tbody>
               </table>
-              {canManageUsers && (
-                <div className="member-form">
-                  <h3>Add or update member</h3>
-                  {editingMemberId && (
-                    <p className="hint">
-                      Editing permissions for <strong>{memberForm.email}</strong>.
-                      Email cannot be changed while updating an existing account.
-                    </p>
-                  )}
-                  <div className="form-grid">
-                    <label>
-                      Name
-                      <input
-                        type="text"
-                        value={memberForm.name}
-                        onChange={(e) =>
-                          setMemberForm({ ...memberForm, name: e.target.value })
-                        }
-                      />
-                    </label>
-                      <label>
-                      Email
-                      <input
-                        type="email"
-                        value={memberForm.email}
-                        onChange={(e) =>
-                          setMemberForm({ ...memberForm, email: e.target.value })
-                        }
-                        disabled={Boolean(editingMemberId)}
-                      />
-                    </label>
-                    <label>
-                      Temporary password (optional)
-                      <input
-                        type="text"
-                        value={memberForm.password}
-                        onChange={(e) =>
-                          setMemberForm({ ...memberForm, password: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <fieldset>
-                    <legend>Roles</legend>
-                    <div className="role-grid">
-                      {ROLE_OPTIONS.map((role) => (
-                        <label key={role.value}>
-                          <input
-                            type="checkbox"
-                            checked={memberForm.roles.includes(role.value)}
-                            onChange={() => toggleRole(role.value)}
-                          />
-                          {role.label}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <fieldset className="product-fieldset">
-                    <legend>Product access</legend>
-                    {memberDocumentProduct &&
-                      isDocumentAnalysisConfig(memberDocumentProduct) && (
-                        <div className="product-options">
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={memberDocumentProduct.permissions.createQuestionSet}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  DOCUMENT_ANALYSIS_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isDocumentAnalysisConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      permissions: {
-                                        ...config.permissions,
-                                        createQuestionSet: e.target.checked,
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            />
-                            Create question sets
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={memberDocumentProduct.permissions.evaluateDocument}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  DOCUMENT_ANALYSIS_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isDocumentAnalysisConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      permissions: {
-                                        ...config.permissions,
-                                        evaluateDocument: e.target.checked,
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            />
-                            Evaluate documents
-                          </label>
-                        </div>
-                      )}
-                    {memberCvParserProduct &&
-                      isCvParserConfig(memberCvParserProduct) && (
-                        <div className="product-options">
-                          <label>
-                            Access level
-                            <select
-                              value={memberCvParserProduct.options.accessLevel}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  CV_PARSER_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isCvParserConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      options: {
-                                        ...config.options,
-                                        accessLevel: e.target.value as
-                                          | "none"
-                                          | "read"
-                                          | "write",
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            >
-                              <option value="none">No access</option>
-                              <option value="read">Read</option>
-                              <option value="write">Write</option>
-                            </select>
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={memberCvParserProduct.options.betaFeatures}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  CV_PARSER_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isCvParserConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      options: {
-                                        ...config.options,
-                                        betaFeatures: e.target.checked,
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            />
-                            Enable beta features
-                          </label>
-                        </div>
-                      )}
-                    {memberApiProduct &&
-                      isApiPlatformConfig(memberApiProduct) && (
-                        <div className="product-options">
-                          <label>
-                            Environment
-                            <select
-                              value={memberApiProduct.options.environment}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  API_PLATFORM_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isApiPlatformConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      options: {
-                                        ...config.options,
-                                        environment: e.target.value as
-                                          | "sandbox"
-                                          | "production",
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            >
-                              <option value="sandbox">Sandbox</option>
-                              <option value="production">Production</option>
-                            </select>
-                          </label>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={memberApiProduct.options.allowModelTraining}
-                              onChange={(e) =>
-                                updateMemberProductConfig(
-                                  API_PLATFORM_PRODUCT_ID,
-                                  (config) => {
-                                    if (!isApiPlatformConfig(config)) return config;
-                                    return {
-                                      ...config,
-                                      options: {
-                                        ...config.options,
-                                        allowModelTraining: e.target.checked,
-                                      },
-                                    };
-                                  },
-                                )
-                              }
-                            />
-                            Allow model training
-                          </label>
-                        </div>
-                      )}
-                  </fieldset>
-                  <div className="member-actions">
-                    <button onClick={handleSaveMember}>
-                      {editingMemberId ? "Update member" : "Save member"}
-                    </button>
-                    {editingMemberId && (
-                      <button type="button" className="secondary" onClick={resetMemberForm}>
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </section>
           )}
         </div>
@@ -1702,8 +1590,6 @@ export default function BillingPage() {
           display: flex;
           flex-direction: column;
           gap: 0.75rem;
-          border-top: 1px solid #eee;
-          padding-top: 1rem;
         }
         .form-grid {
           display: grid;
@@ -1734,22 +1620,35 @@ export default function BillingPage() {
         .product-list li {
           margin-bottom: 0.25rem;
         }
-        .product-options {
+        .member-product-editor {
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.75rem;
         }
-        .member-actions {
+        .member-product-editor h4 {
+          margin: 0;
+          font-size: 1rem;
+          font-weight: 600;
+        }
+        .member-header {
           display: flex;
-          gap: 0.5rem;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
         }
-        .member-actions .secondary {
-          background: #fff;
-          color: #333;
-          border: 1px solid #d9d9d9;
+        .member-header h2 {
+          margin: 0;
         }
-        .member-actions .secondary:hover {
-          background: #fafafa;
+        .member-header button {
+          padding: 0.5rem 1rem;
+          border: none;
+          border-radius: 4px;
+          background: #1890ff;
+          color: #fff;
+          cursor: pointer;
+        }
+        .member-header button:hover {
+          background: #096dd9;
         }
         fieldset {
           border: 1px solid #d9d9d9;
