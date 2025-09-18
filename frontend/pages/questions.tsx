@@ -11,7 +11,10 @@ import {
 import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
+import Modal from "@/components/Modal";
 import { useAuth } from "@/context/AuthContext";
+import { forceLogoutRedirect } from "@/lib/session";
+import { isUnauthorized } from "@/lib/http";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -149,19 +152,30 @@ const QuestionSetPage: React.FC<
   const closeModal = () => setShowModal(false);
   const openLoadModal = async () => {
     const headers = buildAuthHeaders();
-    const res = await fetch(`${API_URL}/api/questions`, {
-      headers,
-    });
-    const data: {
-      id: string;
-      title: string;
-      date: string;
-      questionCount: number;
-      snippetCount: number;
-    }[] = await res.json();
-    setAvailableSets(data);
-    setShowLoadModal(true);
-    setFocusedSetId(data.length > 0 ? data[0].id : null);
+    try {
+      const res = await fetch(`${API_URL}/api/questions`, {
+        headers,
+      });
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+          return;
+        }
+        throw new Error(await res.text());
+      }
+      const data: {
+        id: string;
+        title: string;
+        date: string;
+        questionCount: number;
+        snippetCount: number;
+      }[] = await res.json();
+      setAvailableSets(data);
+      setShowLoadModal(true);
+      setFocusedSetId(data.length > 0 ? data[0].id : null);
+    } catch (error) {
+      console.error("Failed to load question sets", error);
+    }
   };
   const closeLoadModal = () => setShowLoadModal(false);
   const handleDeleteSet = async (id: string) => {
@@ -171,31 +185,53 @@ const QuestionSetPage: React.FC<
       )
     ) {
       const headers = buildAuthHeaders();
-      await fetch(`${API_URL}/api/questions/${id}`, {
-        method: "DELETE",
-        headers,
-      });
-      setAvailableSets((prev) => prev.filter((s) => s.id !== id));
+      try {
+        const res = await fetch(`${API_URL}/api/questions/${id}`, {
+          method: "DELETE",
+          headers,
+        });
+        if (!res.ok) {
+          if (isUnauthorized(res.status)) {
+            forceLogoutRedirect();
+            return;
+          }
+          throw new Error(await res.text());
+        }
+        setAvailableSets((prev) => prev.filter((s) => s.id !== id));
+      } catch (error) {
+        console.error("Failed to delete question set", error);
+      }
     }
   };
 
   const loadQuestionSet = async (id: string) => {
     const headers = buildAuthHeaders();
-    const res = await fetch(`${API_URL}/api/questions/${id}`, {
-      headers,
-    });
-    const set: QuestionSet = await res.json();
+    try {
+      const res = await fetch(`${API_URL}/api/questions/${id}`, {
+        headers,
+      });
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+          return;
+        }
+        throw new Error(await res.text());
+      }
+      const set: QuestionSet = await res.json();
 
-    setQuestionSet(set);
-    setSnippets(
-      set.qaResults.reduce((acc, result) => {
-        acc[result.snippetId] = result;
-        return acc;
-      }, {} as Record<string, QAResult>)
-    );
+      setQuestionSet(set);
+      setSnippets(
+        set.qaResults.reduce((acc, result) => {
+          acc[result.snippetId] = result;
+          return acc;
+        }, {} as Record<string, QAResult>),
+      );
 
-    setIsSaved(true);
-    closeLoadModal();
+      setIsSaved(true);
+      closeLoadModal();
+    } catch (error) {
+      console.error("Failed to load question set", error);
+    }
   };
 
   const handleSubmit = async () => {
@@ -209,45 +245,63 @@ const QuestionSetPage: React.FC<
       ...buildAuthHeaders(),
       "Content-Type": "application/json",
     };
-    const res = await fetch(`${API_URL}/api/questions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ changeRequest: userInput }),
-    });
-    if (!res.body) return;
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop()!;
-      for (const part of parts) {
-        const lines = part.split("\n");
-        const eventLine = lines.find((l) => l.startsWith("event:"));
-        const dataLine = lines.find((l) => l.startsWith("data:"));
-        if (!eventLine || !dataLine) continue;
-        const event = eventLine.replace("event:", "").trim();
-        const payload = JSON.parse(dataLine.replace("data:", "").trim());
+    try {
+      const res = await fetch(`${API_URL}/api/questions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ changeRequest: userInput }),
+      });
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          setIsGenerating(false);
+          forceLogoutRedirect();
+          return;
+        }
+        const message = await res.text();
+        throw new Error(message || "Failed to generate question set");
+      }
+      if (!res.body) {
+        throw new Error("No response received from the server");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop()!;
+        for (const part of parts) {
+          const lines = part.split("\n");
+          const eventLine = lines.find((l) => l.startsWith("event:"));
+          const dataLine = lines.find((l) => l.startsWith("data:"));
+          if (!eventLine || !dataLine) continue;
+          const event = eventLine.replace("event:", "").trim();
+          const payload = JSON.parse(dataLine.replace("data:", "").trim());
 
-        switch (event) {
-          case "log":
-            setLogs((prev) => [...prev, payload.log]);
-            break;
+          switch (event) {
+            case "log":
+              setLogs((prev) => [...prev, payload.log]);
+              break;
 
-          case "loadQuestionSet":
-            loadQuestionSet(payload.questionSetId);
-            break;
-          default:
-            break;
+            case "loadQuestionSet":
+              void loadQuestionSet(payload.questionSetId);
+              break;
+            default:
+              break;
+          }
         }
       }
-    }
 
-    setIsGenerating(false);
-    setStreamComplete(true);
+      setIsGenerating(false);
+      setStreamComplete(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Failed to create question set", error);
+      setLogs((prev) => [...prev, `Error: ${message}`]);
+      setIsGenerating(false);
+    }
   };
 
   const handleSave = () => {
@@ -324,157 +378,153 @@ const QuestionSetPage: React.FC<
 
   return (
     <main className="container">
-      {showModal && (
-        <div className="modal">
+      <Modal
+        isOpen={showModal}
+        onClose={closeModal}
+        title="Create Question Set"
+        className="question-modal"
+        bodyClassName="question-modal-body"
+      >
+        {!isGenerating && !streamComplete && (
+          <DynamicWidthTextarea
+            placeholder="Type or paste your questions here or describe the set of questions you want to generate."
+            growVertically={true}
+            rows={8}
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+          />
+        )}
+
+        {(isGenerating || logs.length > 0) && (
+          <div className="log-viewer" ref={logViewerRef}>
+            {logs.map((line, idx) => (
+              <div key={idx}>{line}</div>
+            ))}
+          </div>
+        )}
+
+        <div className="modal-buttons">
           {!isGenerating && !streamComplete && (
             <>
-              <DynamicWidthTextarea
-                placeholder="Type or paste your questions here or describe the set of questions you want to generate."
-                growVertically={true}
-                rows={8}
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-              />
+              <button className="finish-button" onClick={handleSubmit}>
+                Generate Questions
+              </button>
+              <button className="finish-button" onClick={closeModal}>
+                Cancel
+              </button>
             </>
           )}
-
-          {(isGenerating || logs.length > 0) && (
-            <div className="log-viewer" ref={logViewerRef}>
-              {logs.map((line, idx) => (
-                <div key={idx}>{line}</div>
-              ))}
-            </div>
+          {isGenerating && <span>Processing... please wait.</span>}
+          {streamComplete && (
+            <>
+              <p className="finish-message">
+                The question set is saved! You can now close this and review it.
+              </p>
+              <button className="finish-button" onClick={closeModal}>
+                Close{countdown > 0 ? ` (${countdown}s)` : ""}
+              </button>
+            </>
           )}
-
-          <div className="modal-buttons">
-            {!isGenerating && !streamComplete && (
-              <>
-                <button className="finish-button" onClick={handleSubmit}>
-                  Generate Questions
-                </button>
-                <button className="finish-button" onClick={closeModal}>
-                  Cancel
-                </button>
-              </>
-            )}
-            {isGenerating && <span>Processing... please wait.</span>}
-            {streamComplete && (
-              <>
-                <p className="finish-message">
-                  The question set is saved! You can now close this and review
-                  it.
-                </p>
-                <button className="finish-button" onClick={closeModal}>
-                  Close{countdown > 0 ? ` (${countdown}s)` : ""}
-                </button>
-              </>
-            )}
-          </div>
         </div>
-      )}
+      </Modal>
 
-      {showLoadModal && (
-        <div className="modal">
-          <button
-            className="modal-close"
-            onClick={closeLoadModal}
-            aria-label="Close"
-          >
-            ×
-          </button>
-          <h2>Select a Question Set</h2>
-          <ul
-            className="load-list"
-            tabIndex={0}
-            ref={loadListRef}
-            onKeyDown={handleLoadKeyDown}
-            onFocus={() => {
-              if (!focusedSetId && availableSets.length) {
-                setFocusedSetId(availableSets[0].id);
-              }
-            }}
-          >
-            {availableSets.map((set) => (
-              <li
-                key={set.id}
-                className={`load-item ${
-                  focusedSetId === set.id ? "selected" : ""
-                }`}
-                onClick={() => loadQuestionSet(set.id)}
-                onFocus={() => setFocusedSetId(set.id)}
-                tabIndex={-1}
-              >
-                <div className="load-item-content">
-                  <div className="load-item-title">{set.title}</div>
-                  <div className="load-item-subtitle">
-                    {new Date(set.date).toLocaleString(undefined, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}{" "}
-                    • {set.questionCount}
-                    {set.questionCount === 1 ? " Question" : " Questions"}
-                    {set.snippetCount > 0
-                      ? ` • ${set.snippetCount} ${
-                          set.snippetCount === 1
-                            ? "Conversation"
-                            : "Conversations"
-                        }`
-                      : ""}
-                  </div>
+      <Modal
+        isOpen={showLoadModal}
+        onClose={closeLoadModal}
+        title="Select a Question Set"
+        className="load-modal"
+        bodyClassName="load-modal-body"
+      >
+        <ul
+          className="load-list"
+          tabIndex={0}
+          ref={loadListRef}
+          onKeyDown={handleLoadKeyDown}
+          onFocus={() => {
+            if (!focusedSetId && availableSets.length) {
+              setFocusedSetId(availableSets[0].id);
+            }
+          }}
+        >
+          {availableSets.map((set) => (
+            <li
+              key={set.id}
+              className={`load-item ${
+                focusedSetId === set.id ? "selected" : ""
+              }`}
+              onClick={() => loadQuestionSet(set.id)}
+              onFocus={() => setFocusedSetId(set.id)}
+              tabIndex={-1}
+            >
+              <div className="load-item-content">
+                <div className="load-item-title">{set.title}</div>
+                <div className="load-item-subtitle">
+                  {new Date(set.date).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}{" "}
+                  • {set.questionCount}
+                  {set.questionCount === 1 ? " Question" : " Questions"}
+                  {set.snippetCount > 0
+                    ? ` • ${set.snippetCount} ${
+                        set.snippetCount === 1
+                          ? "Conversation"
+                          : "Conversations"
+                      }`
+                    : ""}
                 </div>
-                <button
-                  className="delete-button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSet(set.id);
-                  }}
-                  aria-label="Delete question set"
+              </div>
+              <button
+                className="delete-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteSet(set.id);
+                }}
+                aria-label="Delete question set"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
                 >
-                  {/* Trash icon SVG */}
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M3 6h18"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M8 6V4h8v2"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M19 6l-1 14H6L5 6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M10 11v6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M14 11v6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                  <path
+                    d="M3 6h18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M8 6V4h8v2"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M19 6l-1 14H6L5 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M10 11v6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M14 11v6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Modal>
 
       <div className="main-content">
         <div className="panel questions-panel" tabIndex={0}>
@@ -1612,34 +1662,24 @@ const QuestionSetPage: React.FC<
         }
 
         /* Modals & Log Viewer */
-        .modal {
-          position: fixed;
-          top: 50%;
-          left: 50%;
-          width: 70%;
-          transform: translate(-50%, -50%);
-          background: #fff;
-          padding: 2rem;
-          border-radius: 8px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-          z-index: 100;
+        :global(.question-modal .modal-body) {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
         }
-        .modal-close {
-          position: absolute;
-          top: 1rem;
-          right: 1rem;
-          border: none;
-          background: transparent;
-          font-size: 1.25rem;
-          cursor: pointer;
-          color: #666;
-        }
-        .modal textarea {
+        :global(.question-modal textarea) {
           width: 100%;
-          height: 300px;
+          min-height: 200px;
           border: 1px solid #d9d9d9;
           border-radius: 4px;
           padding: 0.5rem;
+          background: #fafafa;
+        }
+        :global(.load-modal .modal-body) {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          max-height: 60vh;
         }
         .modal-buttons {
           margin-top: 1rem;

@@ -3,6 +3,9 @@ import { QAResult, Question, QuestionSet } from "@/types/Questions";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
+import Modal from "@/components/Modal";
+import { forceLogoutRedirect } from "@/lib/session";
+import { isUnauthorized } from "@/lib/http";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -89,30 +92,46 @@ export default function SnippetsPage(props: {
       ...buildAuthHeaders(),
       ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
     };
-    const res = await fetch(`${API_URL}/api/upload`, {
-      method: "POST",
-      headers,
-      body: form,
-    });
-    if (!res.body) return;
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop()!;
-      for (const part of parts) {
-        const lines = part.split("\n");
-        const eventLine = lines.find((l) => l.startsWith("event:"));
-        const dataLine = lines.find((l) => l.startsWith("data:"));
-        if (!eventLine || !dataLine) continue;
-        const event = eventLine.replace("event:", "").trim();
-        const data = JSON.parse(dataLine.replace("data:", ""));
-        handleEvent(event, data);
+    try {
+      const res = await fetch(`${API_URL}/api/upload`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+          return;
+        }
+        const message = await res.text();
+        throw new Error(message || "Failed to upload files");
       }
+      if (!res.body) {
+        throw new Error("No response received from the server");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop()!;
+        for (const part of parts) {
+          const lines = part.split("\n");
+          const eventLine = lines.find((l) => l.startsWith("event:"));
+          const dataLine = lines.find((l) => l.startsWith("data:"));
+          if (!eventLine || !dataLine) continue;
+          const event = eventLine.replace("event:", "").trim();
+          const data = JSON.parse(dataLine.replace("data:", ""));
+          handleEvent(event, data);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Failed to upload files", error);
+      setLogs((prev) => [...prev, `Error: ${message}`]);
     }
     e.target.value = "";
   };
@@ -348,34 +367,50 @@ export default function SnippetsPage(props: {
       ...buildAuthHeaders(),
       ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
     };
-    const res = await fetch(`${API_URL}/api/upload`, {
-      method: "POST",
-      headers,
-      body: form,
-    });
-    if (!res.body) return;
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop()!;
-
-      for (const part of parts) {
-        const lines = part.split("\n");
-        const eventLine = lines.find((l) => l.startsWith("event:"));
-        const dataLine = lines.find((l) => l.startsWith("data:"));
-        if (!eventLine || !dataLine) continue;
-
-        const event = eventLine.replace("event:", "").trim();
-        const data = JSON.parse(dataLine.replace("data:", ""));
-        handleEvent(event, data);
+    try {
+      const res = await fetch(`${API_URL}/api/upload`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      if (!res.ok) {
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+          return;
+        }
+        const message = await res.text();
+        throw new Error(message || "Failed to upload files");
       }
+      if (!res.body) {
+        throw new Error("No response received from the server");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop()!;
+
+        for (const part of parts) {
+          const lines = part.split("\n");
+          const eventLine = lines.find((l) => l.startsWith("event:"));
+          const dataLine = lines.find((l) => l.startsWith("data:"));
+          if (!eventLine || !dataLine) continue;
+
+          const event = eventLine.replace("event:", "").trim();
+          const data = JSON.parse(dataLine.replace("data:", ""));
+          handleEvent(event, data);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Failed to upload files", error);
+      setLogs((prev) => [...prev, `Error: ${message}`]);
     }
   };
 
@@ -423,19 +458,15 @@ export default function SnippetsPage(props: {
 
   return (
     <>
-      {processingMsg && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <button
-              className="modal-close-button"
-              onClick={() => setProcessingMsg(null)}
-            >
-              ×
-            </button>
-            <p>{processingMsg}</p>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={Boolean(processingMsg)}
+        onClose={() => setProcessingMsg(null)}
+        title="Processing"
+        className="processing-modal"
+        bodyClassName="processing-modal-body"
+      >
+        <p>{processingMsg}</p>
+      </Modal>
       <main className="container" onDragOver={handleContainerDragOver}>
         <input
           ref={fileInputRef}
@@ -780,27 +811,19 @@ export default function SnippetsPage(props: {
           border: none;
           overflow-y: auto;
         }
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
+        :global(.processing-modal) {
+          width: min(420px, 100%);
         }
-        .modal {
-          position: relative;
-          background: #fff;
-          padding: 1.5rem;
-          border-radius: 8px;
-          max-width: 1000px;
-          width: 90%;
-          max-height: 80%;
-          overflow-y: auto;
+        :global(.processing-modal-body) {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+          font-size: 1rem;
+        }
+        :global(.processing-modal-body p) {
+          margin: 0;
+          text-align: center;
         }
         details > summary {
           list-style: none;
@@ -819,15 +842,6 @@ export default function SnippetsPage(props: {
           content: "▾";
         }
 
-        .modal-close-button {
-          position: absolute;
-          top: 0.5rem;
-          right: 0.5rem;
-          background: transparent;
-          border: none;
-          font-size: 1.25rem;
-          cursor: pointer;
-        }
 
         .drawer {
           position: fixed;

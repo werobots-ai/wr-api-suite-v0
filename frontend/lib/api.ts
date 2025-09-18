@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { HttpError, isUnauthorized } from "./http";
+import { forceLogoutRedirect } from "./session";
+
 export async function fetchJSON<T>(
   url: string,
-  opts?: RequestInit
+  opts?: RequestInit,
 ): Promise<T> {
   const headers = new Headers(opts?.headers || {});
   if (typeof window !== "undefined") {
@@ -11,7 +14,13 @@ export async function fetchJSON<T>(
     if (orgId) headers.set("x-org-id", orgId);
   }
   const res = await fetch(url, { ...opts, headers });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const message = await res.text();
+    if (isUnauthorized(res.status)) {
+      forceLogoutRedirect();
+    }
+    throw new HttpError(res.status, message || res.statusText);
+  }
   return res.json();
 }
 
