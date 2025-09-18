@@ -1,4 +1,5 @@
-import { ReactNode, useEffect, useId } from "react";
+import { ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface ModalProps {
   isOpen: boolean;
@@ -23,7 +24,36 @@ export default function Modal({
   closeLabel = "Close dialog",
   showCloseButton = true,
 }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const labelId = useId();
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return () => {};
+    }
+
+    const rootId = "wr-modal-root";
+    let root = document.getElementById(rootId);
+    if (!root) {
+      root = document.createElement("div");
+      root.setAttribute("id", rootId);
+      document.body.appendChild(root);
+    }
+
+    const container = document.createElement("div");
+    container.className = "modal-container";
+    root.appendChild(container);
+    containerRef.current = container;
+    setMounted(true);
+
+    return () => {
+      if (containerRef.current && containerRef.current.parentNode) {
+        containerRef.current.parentNode.removeChild(containerRef.current);
+      }
+      containerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -42,13 +72,13 @@ export default function Modal({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) {
+  if (!isOpen || !mounted || !containerRef.current) {
     return null;
   }
 
   const shouldRenderHeader = Boolean(title) || showCloseButton;
 
-  return (
+  return createPortal(
     <div className="modal-overlay" role="presentation" onClick={onClose}>
       <div
         className={`modal ${className ?? ""}`.trim()}
@@ -135,6 +165,7 @@ export default function Modal({
           }
         `}</style>
       </div>
-    </div>
+    </div>,
+    containerRef.current,
   );
 }
