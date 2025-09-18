@@ -15,6 +15,8 @@ import {
   AccountProductAccess,
   AccountDocumentAccess,
 } from "@/types/account";
+import { HttpError, isUnauthorized } from "@/lib/http";
+import { forceLogoutRedirect, LOGOUT_EVENT_NAME } from "@/lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -79,6 +81,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useState<AccountDocumentAccess>(null);
   const [loading, setLoading] = useState(true);
 
+  const logout = useCallback(() => {
+    setToken(null);
+    setUser(null);
+    setOrganization(null);
+    setOrganizations([]);
+    setPermissions(null);
+    setActiveOrgId(null);
+    setStoredValue("wr_auth_token", null);
+    setStoredValue("wr_active_org", null);
+    setProductCatalog([]);
+    setProductAccess([]);
+    setDocumentAccess(null);
+    setStoredValue("apiKey", null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleForcedLogout = () => {
+      logout();
+    };
+    window.addEventListener(LOGOUT_EVENT_NAME, handleForcedLogout);
+    return () => {
+      window.removeEventListener(LOGOUT_EVENT_NAME, handleForcedLogout);
+    };
+  }, [logout]);
+
   const fetchWithAuth = useCallback(
     async (
       path: string,
@@ -99,7 +128,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${API_URL}${path}`, { ...opts, headers });
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(text || res.statusText);
+        if (isUnauthorized(res.status)) {
+          forceLogoutRedirect();
+        }
+        throw new HttpError(res.status, text || res.statusText);
       }
       return res.json();
     },
@@ -141,6 +173,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
         setOrganizations(orgList.organizations || []);
       } catch (err) {
+        if (err instanceof HttpError && isUnauthorized(err.status)) {
+          return;
+        }
         console.error("Failed to refresh account", err);
       } finally {
         setLoading(false);
@@ -149,34 +184,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [token, activeOrgId, fetchWithAuth],
   );
 
-  const logout = useCallback(() => {
-    setToken(null);
-    setUser(null);
-    setOrganization(null);
-    setOrganizations([]);
-    setPermissions(null);
-    setActiveOrgId(null);
-    setStoredValue("wr_auth_token", null);
-    setStoredValue("wr_active_org", null);
-    setProductCatalog([]);
-    setProductAccess([]);
-    setDocumentAccess(null);
-    setStoredValue("apiKey", null);
-  }, []);
-
   useEffect(() => {
     const storedToken = getStoredValue("wr_auth_token");
     const storedOrg = getStoredValue("wr_active_org");
     if (storedToken) {
       setToken(storedToken);
       setActiveOrgId(storedOrg);
-      refreshAccountInternal(storedToken, storedOrg ?? undefined).catch(() => {
-        logout();
-      });
+      refreshAccountInternal(storedToken, storedOrg ?? undefined).catch(
+        (error) => {
+          console.error("Failed to initialize account", error);
+        },
+      );
     } else {
       setLoading(false);
     }
-  }, [refreshAccountInternal, logout]);
+  }, [refreshAccountInternal]);
 
   const login = useCallback(
     async (email: string, password: string) => {
