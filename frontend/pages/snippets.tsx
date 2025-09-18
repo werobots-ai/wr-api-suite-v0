@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { QAResult, Question, QuestionSet } from "@/types/Questions";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/router";
+import { useAuth } from "@/context/AuthContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -10,6 +12,28 @@ export default function SnippetsPage(props: {
   setSnippets: React.Dispatch<React.SetStateAction<Record<string, QAResult>>>;
 }) {
   const { snippets, setSnippets } = props;
+  const { token, activeOrgId, documentAccess, loading: authLoading } =
+    useAuth();
+  const router = useRouter();
+  const canEvaluateDocuments = Boolean(
+    documentAccess?.permissions.evaluateDocument,
+  );
+  useEffect(() => {
+    if (authLoading) return;
+    if (!token) {
+      router.replace("/auth/dev-login");
+      return;
+    }
+    if (!canEvaluateDocuments) {
+      router.replace("/account/billing");
+    }
+  }, [authLoading, token, canEvaluateDocuments, router]);
+  const buildAuthHeaders = useCallback(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (activeOrgId) headers["x-org-id"] = activeOrgId;
+    return headers;
+  }, [token, activeOrgId]);
 
   const [logs, setLogs] = useState<string[]>([]);
   const logsRef = useRef<HTMLTextAreaElement>(null);
@@ -38,10 +62,8 @@ export default function SnippetsPage(props: {
     }
   }, [props.questionSet]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const getApiKey = () =>
-    typeof window !== "undefined" ? localStorage.getItem("apiKey") : null;
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const handleBrowse = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     setHasDropped(true);
@@ -63,11 +85,10 @@ export default function SnippetsPage(props: {
       e.target.value = "";
       return;
     }
-    const apiKey = getApiKey();
-    const headers: Record<string, string> = props.questionSet
-      ? { questionSetId: props.questionSet.id }
-      : {};
-    if (apiKey) headers["x-api-key"] = apiKey;
+    const headers: Record<string, string> = {
+      ...buildAuthHeaders(),
+      ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
+    };
     const res = await fetch(`${API_URL}/api/upload`, {
       method: "POST",
       headers,
@@ -323,11 +344,10 @@ export default function SnippetsPage(props: {
     }
 
     // Include questionSetId header if provided
-    const apiKey = getApiKey();
-    const headers: Record<string, string> = props.questionSet
-      ? { questionSetId: props.questionSet.id }
-      : {};
-    if (apiKey) headers["x-api-key"] = apiKey;
+    const headers: Record<string, string> = {
+      ...buildAuthHeaders(),
+      ...(props.questionSet ? { questionSetId: props.questionSet.id } : {}),
+    };
     const res = await fetch(`${API_URL}/api/upload`, {
       method: "POST",
       headers,
@@ -388,6 +408,18 @@ export default function SnippetsPage(props: {
   const truncate = (text: string = "", max = 50) => {
     return text.length > max ? text.slice(0, max) + "…" : text;
   };
+
+  if (authLoading) {
+    return (
+      <main className="container">
+        <p>Loading account permissions...</p>
+      </main>
+    );
+  }
+
+  if (!token || !canEvaluateDocuments) {
+    return null;
+  }
 
   return (
     <>

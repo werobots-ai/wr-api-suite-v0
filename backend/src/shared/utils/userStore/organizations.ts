@@ -6,12 +6,14 @@ import {
   UsageEntry,
   UserAccount,
 } from "../../types/Identity";
+import { cloneProductConfig } from "../../types/Products";
 import { createDefaultKeySet, revealStoredKey } from "./apiKeys";
 import { createPasswordHash } from "./passwords";
 import { loadIdentity, saveIdentity } from "./persistence";
 import { slugify } from "./helpers";
 import { now } from "./time";
 import { getUserByEmail } from "./users";
+import { normalizeProductConfigs } from "./productConfig";
 
 export async function getOrganizations(): Promise<Organization[]> {
   const store = await loadIdentity();
@@ -54,6 +56,12 @@ export async function createOrganizationWithOwner(
   const created = now();
 
   const keySet = createDefaultKeySet(ownerId);
+  const defaultProductAccess = normalizeProductConfigs(null, {
+    ensureDocument: true,
+  });
+  const ownerProductAccess = defaultProductAccess.map((config) =>
+    cloneProductConfig(config),
+  );
 
   const owner: UserAccount = {
     id: ownerId,
@@ -61,7 +69,15 @@ export async function createOrganizationWithOwner(
     name: params.ownerName,
     passwordHash: createPasswordHash(params.ownerPassword),
     globalRoles: options.ownerGlobalRoles ?? [],
-    organizations: [{ orgId, roles: ["OWNER", "ADMIN", "BILLING"] }],
+    organizations: [
+      {
+        orgId,
+        roles: ["OWNER", "ADMIN", "BILLING"],
+        productAccess: ownerProductAccess.map((config) =>
+          cloneProductConfig(config),
+        ),
+      },
+    ],
     createdAt: created,
     status: "active",
   };
@@ -80,6 +96,11 @@ export async function createOrganizationWithOwner(
         invitedAt: created,
         joinedAt: created,
         status: "active",
+        productAccess: ownerProductAccess.map((config) =>
+          cloneProductConfig(config),
+        ),
+        usage: [],
+        lastAccessed: null,
       },
     ],
     billingProfile: {
@@ -160,6 +181,7 @@ export async function recordUsage(params: {
   keySetId?: string;
   keyId?: string;
   metadata?: Record<string, unknown>;
+  userId?: string;
 }): Promise<void> {
   const store = await loadIdentity();
   const org = store.organizations[params.orgId];
@@ -174,6 +196,19 @@ export async function recordUsage(params: {
     metadata: params.metadata,
   };
   org.usage.push(entry);
+
+  if (params.userId) {
+    const membership = org.members.find(
+      (member) => member.userId === params.userId,
+    );
+    if (membership) {
+      if (!Array.isArray(membership.usage)) {
+        membership.usage = [];
+      }
+      membership.usage.push(entry);
+      membership.lastAccessed = entry.timestamp;
+    }
+  }
 
   if (params.keySetId && params.keyId) {
     const keySet = org.keySets.find((ks) => ks.id === params.keySetId);

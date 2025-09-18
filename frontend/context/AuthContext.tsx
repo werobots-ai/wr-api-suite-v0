@@ -12,6 +12,8 @@ import {
   ProductCatalogResponse,
   SafeOrganization,
   SafeUser,
+  AccountProductAccess,
+  AccountDocumentAccess,
 } from "@/types/account";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -25,6 +27,8 @@ interface AuthContextValue {
   activeOrgId: string | null;
   loading: boolean;
   productCatalog: ProductCatalogResponse;
+  productAccess: AccountProductAccess;
+  documentAccess: AccountDocumentAccess;
   login: (email: string, password: string) => Promise<void>;
   signup: (input: {
     organizationName: string;
@@ -69,6 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<AccountPermissions | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [productCatalog, setProductCatalog] = useState<ProductCatalogResponse>([]);
+  const [productAccess, setProductAccess] =
+    useState<AccountProductAccess>([]);
+  const [documentAccess, setDocumentAccess] =
+    useState<AccountDocumentAccess>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchWithAuth = useCallback(
@@ -117,6 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOrganization(accountData.organization);
         setPermissions(accountData.permissions);
         setProductCatalog(accountData.productCatalog ?? []);
+        setProductAccess(accountData.productAccess ?? []);
+        setDocumentAccess(accountData.documentAccess ?? null);
         const resolvedOrgId =
           orgId ?? activeOrgId ?? accountData.organization?.id ?? null;
         if (resolvedOrgId) {
@@ -149,6 +159,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoredValue("wr_auth_token", null);
     setStoredValue("wr_active_org", null);
     setProductCatalog([]);
+    setProductAccess([]);
+    setDocumentAccess(null);
+    setStoredValue("apiKey", null);
   }, []);
 
   useEffect(() => {
@@ -269,6 +282,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeOrgId,
       loading,
       productCatalog,
+      productAccess,
+      documentAccess,
       login,
       signup,
       bootstrapMaster,
@@ -285,6 +300,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeOrgId,
       loading,
       productCatalog,
+      productAccess,
+      documentAccess,
       login,
       signup,
       bootstrapMaster,

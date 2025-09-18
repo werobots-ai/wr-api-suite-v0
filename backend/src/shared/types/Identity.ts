@@ -52,6 +52,9 @@ export interface OrgMembership {
   invitedAt: string;
   joinedAt: string;
   status: "active" | "invited" | "suspended";
+  productAccess: ProductKeyConfig[];
+  usage: UsageEntry[];
+  lastAccessed: string | null;
 }
 
 export interface Organization {
@@ -71,6 +74,7 @@ export interface Organization {
 export interface UserOrganizationLink {
   orgId: string;
   roles: OrgRole[];
+  productAccess: ProductKeyConfig[];
 }
 
 export interface UserAccount {

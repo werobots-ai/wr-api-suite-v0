@@ -8,8 +8,10 @@ import {
   ListQuestion,
   QAResult,
 } from "@/types/Questions";
-import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useRouter } from "next/router";
 import DynamicWidthTextarea from "@/components/DynamicWidthTextarea";
+import { useAuth } from "@/context/AuthContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -35,6 +37,30 @@ const QuestionSetPage: React.FC<
 > = (props) => {
   const { questionSet, setQuestionSet, isSaved, setIsSaved, setSnippets } =
     props;
+  const { token, activeOrgId, documentAccess, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const canCreateQuestions = Boolean(
+    documentAccess?.permissions.createQuestionSet,
+  );
+  const canEvaluateDocuments = Boolean(
+    documentAccess?.permissions.evaluateDocument,
+  );
+  useEffect(() => {
+    if (authLoading) return;
+    if (!token) {
+      router.replace("/auth/dev-login");
+      return;
+    }
+    if (!canCreateQuestions || !canEvaluateDocuments) {
+      router.replace("/account/billing");
+    }
+  }, [authLoading, token, canCreateQuestions, canEvaluateDocuments, router]);
+  const buildAuthHeaders = useCallback(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (activeOrgId) headers["x-org-id"] = activeOrgId;
+    return headers;
+  }, [token, activeOrgId]);
   const {
     questions = [],
     snippetType = "",
@@ -122,9 +148,9 @@ const QuestionSetPage: React.FC<
   const openModal = () => setShowModal(true);
   const closeModal = () => setShowModal(false);
   const openLoadModal = async () => {
-    const apiKey = getApiKey();
+    const headers = buildAuthHeaders();
     const res = await fetch(`${API_URL}/api/questions`, {
-      headers: apiKey ? { "x-api-key": apiKey } : undefined,
+      headers,
     });
     const data: {
       id: string;
@@ -144,19 +170,19 @@ const QuestionSetPage: React.FC<
         "Are you sure you want to delete this question set? This action cannot be undone."
       )
     ) {
-      const apiKey = getApiKey();
+      const headers = buildAuthHeaders();
       await fetch(`${API_URL}/api/questions/${id}`, {
         method: "DELETE",
-        headers: apiKey ? { "x-api-key": apiKey } : undefined,
+        headers,
       });
       setAvailableSets((prev) => prev.filter((s) => s.id !== id));
     }
   };
 
   const loadQuestionSet = async (id: string) => {
-    const apiKey = getApiKey();
+    const headers = buildAuthHeaders();
     const res = await fetch(`${API_URL}/api/questions/${id}`, {
-      headers: apiKey ? { "x-api-key": apiKey } : undefined,
+      headers,
     });
     const set: QuestionSet = await res.json();
 
@@ -179,13 +205,13 @@ const QuestionSetPage: React.FC<
     setLogs([]);
     setStreamComplete(false);
 
-    const apiKey = getApiKey();
+    const headers = {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    };
     const res = await fetch(`${API_URL}/api/questions`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "x-api-key": apiKey } : {}),
-      },
+      headers,
       body: JSON.stringify({ changeRequest: userInput }),
     });
     if (!res.body) return;
@@ -284,8 +310,17 @@ const QuestionSetPage: React.FC<
     }
   }, [selectedQuestion]);
 
-  const getApiKey = () =>
-    typeof window !== "undefined" ? localStorage.getItem("apiKey") : null;
+  if (authLoading) {
+    return (
+      <main className="container">
+        <p>Loading account permissions...</p>
+      </main>
+    );
+  }
+
+  if (!token || !canCreateQuestions || !canEvaluateDocuments) {
+    return null;
+  }
 
   return (
     <main className="container">
