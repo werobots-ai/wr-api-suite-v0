@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useId } from "react";
+import { createPortal } from "react-dom";
 
 interface KeyRevealModalProps {
   isOpen: boolean;
@@ -16,6 +17,13 @@ export default function KeyRevealModal({
   onClose,
 }: KeyRevealModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const titleId = useId();
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -37,7 +45,7 @@ export default function KeyRevealModal({
 
   const safeKeys = useMemo(() => keys.filter(Boolean), [keys]);
 
-  if (!isOpen || safeKeys.length === 0) {
+  if (!mounted || !isOpen || safeKeys.length === 0) {
     return null;
   }
 
@@ -51,17 +59,17 @@ export default function KeyRevealModal({
     }
   };
 
-  return (
+  const modal = (
     <div className="overlay" role="presentation" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="key-reveal-title"
+        aria-labelledby={titleId}
         className="modal"
         onClick={(event) => event.stopPropagation()}
       >
         <header>
-          <h2 id="key-reveal-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button type="button" className="close" onClick={onClose} aria-label="Close secret reveal">
             ×
           </button>
@@ -217,4 +225,6 @@ export default function KeyRevealModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
