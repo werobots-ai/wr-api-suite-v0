@@ -1009,16 +1009,47 @@ export default function BillingPage() {
           </section>
 
           {pricing && (
-            <section id="section-pricing" className="card">
+            <section id="section-pricing" className="card pricing-card">
               <h2>Pricing</h2>
-              <p>
-                Question generation: ${pricing.questionGeneration.toFixed(2)} per request
-              </p>
-              <p>
-                Question answering: ${pricing.questionAnswering.toFixed(2)} per request
-              </p>
+              <div className="pricing-grid">
+                <div className="pricing-group">
+                  <h3>API usage</h3>
+                  <dl>
+                    <div className="pricing-row">
+                      <dt>Question generation</dt>
+                      <dd>
+                        ${pricing.questionGeneration.toFixed(2)} per request
+                      </dd>
+                    </div>
+                    <div className="pricing-row">
+                      <dt>Question answering</dt>
+                      <dd>
+                        ${pricing.questionAnswering.toFixed(2)} per request
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="pricing-group">
+                  <h3>UI usage</h3>
+                  <dl>
+                    <div className="pricing-row">
+                      <dt>Question generation</dt>
+                      <dd>
+                        ${(pricing.questionGeneration * 2).toFixed(2)} per request
+                      </dd>
+                    </div>
+                    <div className="pricing-row">
+                      <dt>Question answering</dt>
+                      <dd>
+                        ${(pricing.questionAnswering * 2).toFixed(2)} per request
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
               <p className="hint">
-                These figures mirror our live pricing tables. Stripe billing will be wired here soon.
+                Operator console usage is billed at twice the API rate to cover orchestration overhead. These figures mirror our
+                live pricing tables. Stripe billing will be wired here soon.
               </p>
             </section>
           )}
@@ -1374,6 +1405,49 @@ export default function BillingPage() {
         }
         .card h2 {
           margin: 0;
+        }
+        .pricing-card {
+          gap: 1rem;
+        }
+        .pricing-grid {
+          display: grid;
+          gap: 0.75rem;
+        }
+        @media (min-width: 600px) {
+          .pricing-grid {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          }
+        }
+        .pricing-group h3 {
+          margin: 0 0 0.5rem;
+          font-size: 0.9rem;
+          color: #595959;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .pricing-group dl {
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+        }
+        .pricing-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 1rem;
+          font-size: 0.95rem;
+        }
+        .pricing-row dt {
+          margin: 0;
+          font-weight: 500;
+          color: #434343;
+        }
+        .pricing-row dd {
+          margin: 0;
+          font-weight: 600;
+          color: #1f1f1f;
+          text-align: right;
         }
         .hero h1 {
           margin: 0;
