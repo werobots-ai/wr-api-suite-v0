@@ -3,6 +3,7 @@ import KeyRevealModal from "@/components/KeyRevealModal";
 import Modal from "@/components/Modal";
 import UsageBreakdown from "@/components/UsageBreakdown";
 import { fetchJSON } from "@/lib/api";
+import { splitUsageEntries, summarizeTopUps } from "@/lib/usage";
 import { OrgRole, SafeApiKey, SafeKeySet, SafeUser, UsageEntry } from "@/types/account";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -638,9 +639,14 @@ export default function BillingPage() {
     setMemberModalOpen(true);
   };
 
-  const organizationUsage = useMemo<UsageEntry[]>(
-    () => organization?.usage ?? [],
+  const { usage: organizationUsage, topUps: organizationTopUps } = useMemo(
+    () => splitUsageEntries(organization?.usage ?? []),
     [organization?.usage],
+  );
+
+  const topUpSummary = useMemo(
+    () => summarizeTopUps(organizationTopUps),
+    [organizationTopUps],
   );
 
   const orgStats = useMemo(
@@ -1020,6 +1026,30 @@ export default function BillingPage() {
           <section id="section-credits" className="card">
             <h2>Credits &amp; top-ups</h2>
             <p className="metric">${organization.credits.toFixed(2)}</p>
+            <p className="hint">
+              {topUpSummary.count === 0
+                ? "No top-ups have been recorded yet."
+                : `Top-up history: ${topUpSummary.count} ${
+                    topUpSummary.count === 1 ? "top-up" : "top-ups"
+                  } totaling $${topUpSummary.totalAmount.toFixed(2)}${
+                    topUpSummary.lastTimestamp
+                      ? ` (last on ${new Date(topUpSummary.lastTimestamp).toLocaleString()})`
+                      : ""
+                  }.`}
+            </p>
+            {organizationTopUps.length > 0 && (
+              <ul className="topup-history">
+                {organizationTopUps
+                  .slice()
+                  .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+                  .map((entry, index) => (
+                    <li key={`${entry.timestamp}-${index}`}>
+                      <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                      <span className="amount">+${Math.abs(entry.billedCost).toFixed(2)}</span>
+                    </li>
+                  ))}
+              </ul>
+            )}
             {canManageBilling ? (
               <div className="topup">
                 <input
@@ -1386,6 +1416,27 @@ export default function BillingPage() {
           margin: 0;
           font-size: 0.9rem;
           color: #666;
+        }
+        .topup-history {
+          margin: 0.5rem 0;
+          padding: 0;
+          list-style: none;
+          display: grid;
+          gap: 0.25rem;
+        }
+        .topup-history li {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f7f9fc;
+          border: 1px solid #eef2f7;
+          border-radius: 4px;
+          padding: 0.35rem 0.5rem;
+          font-size: 0.9rem;
+        }
+        .topup-history .amount {
+          font-weight: 600;
+          color: #237804;
         }
         .topup {
           display: flex;

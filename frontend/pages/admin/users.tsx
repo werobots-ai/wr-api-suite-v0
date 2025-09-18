@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import UsageBreakdown from "@/components/UsageBreakdown";
 import KeyRevealModal from "@/components/KeyRevealModal";
 import { fetchJSON } from "@/lib/api";
+import { splitUsageEntries, summarizeTopUps } from "@/lib/usage";
 import {
   PlatformOrganization,
   PlatformOverview,
@@ -145,6 +146,16 @@ export default function AdminConsole() {
       lastTopUpAt: selectedOrganization.topUps.lastTopUpAt,
     };
   }, [selectedOrganization]);
+
+  const { usage: selectedOrgUsageEntries, topUps: selectedOrgTopUps } = useMemo(
+    () => splitUsageEntries(selectedOrganization?.organization.usage ?? []),
+    [selectedOrganization?.organization.usage],
+  );
+
+  const selectedOrgTopUpSummary = useMemo(
+    () => summarizeTopUps(selectedOrgTopUps),
+    [selectedOrgTopUps],
+  );
 
   const rotateKey = useCallback(
     async (org: PlatformOrganization, setId: string, index: number) => {
@@ -531,7 +542,36 @@ export default function AdminConsole() {
                   </div>
                   <div className="detail-section">
                     <h3>Usage history</h3>
-                    <UsageBreakdown entries={selectedOrganization.organization.usage} />
+                    <UsageBreakdown entries={selectedOrgUsageEntries} />
+                    <div className="topup-summary">
+                      <h4>Top-ups</h4>
+                      {selectedOrgTopUps.length > 0 ? (
+                        <>
+                          <p className="muted">
+                            {selectedOrgTopUpSummary.count === 1
+                              ? `1 top-up totaling ${formatCurrency(selectedOrgTopUpSummary.totalAmount)}`
+                              : `${selectedOrgTopUpSummary.count} top-ups totaling ${formatCurrency(selectedOrgTopUpSummary.totalAmount)}`}
+                            {selectedOrgTopUpSummary.lastTimestamp
+                              ? ` (last on ${new Date(selectedOrgTopUpSummary.lastTimestamp).toLocaleString()})`
+                              : ""}
+                            .
+                          </p>
+                          <ul className="topup-history">
+                            {selectedOrgTopUps
+                              .slice()
+                              .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+                              .map((entry, index) => (
+                                <li key={`${entry.timestamp}-${index}`}>
+                                  <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                                  <span className="amount">+{formatCurrency(Math.abs(entry.billedCost))}</span>
+                                </li>
+                              ))}
+                          </ul>
+                        </>
+                      ) : (
+                        <p className="muted">No top-ups recorded.</p>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (
@@ -809,6 +849,40 @@ export default function AdminConsole() {
         }
         .detail-section h3 {
           margin-top: 0;
+        }
+        .topup-summary {
+          margin-top: 1.25rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .topup-summary h4 {
+          margin: 0;
+        }
+        .topup-summary .muted {
+          margin: 0;
+          font-size: 0.9rem;
+        }
+        .topup-history {
+          margin: 0;
+          padding: 0;
+          list-style: none;
+          display: grid;
+          gap: 0.3rem;
+        }
+        .topup-history li {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f7f9fc;
+          border: 1px solid #eef2f7;
+          border-radius: 4px;
+          padding: 0.35rem 0.5rem;
+          font-size: 0.9rem;
+        }
+        .topup-history .amount {
+          font-weight: 600;
+          color: #237804;
         }
         .keyset {
           border-top: 1px solid #f0f0f0;
