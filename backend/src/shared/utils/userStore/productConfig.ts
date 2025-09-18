@@ -1,7 +1,8 @@
 import {
   API_PLATFORM_PRODUCT_ID,
   DOCUMENT_ANALYSIS_PRODUCT_ID,
-  INSIGHTS_SANDBOX_PRODUCT_ID,
+  CV_PARSER_PRODUCT_ID,
+  LEGACY_CV_PARSER_PRODUCT_ID,
   ProductDefinition,
   ProductId,
   ProductKeyConfig,
@@ -9,7 +10,7 @@ import {
   cloneProductConfig,
   createDefaultApiPlatformConfig,
   createDefaultDocumentAnalysisConfig,
-  createDefaultInsightsSandboxConfig,
+  createDefaultCvParserConfig,
 } from "../../types/Products";
 
 type ProductConfigInput =
@@ -29,7 +30,7 @@ function coerceDocumentPermissions(
   };
 }
 
-function coerceInsightsOptions(
+function coerceCvParserOptions(
   input: Partial<{
     options: Partial<{ accessLevel?: unknown; betaFeatures?: unknown }>;
   }>,
@@ -62,7 +63,7 @@ function coerceApiPlatformOptions(
 
 const PRODUCT_SORT_ORDER: ProductId[] = [
   DOCUMENT_ANALYSIS_PRODUCT_ID,
-  INSIGHTS_SANDBOX_PRODUCT_ID,
+  CV_PARSER_PRODUCT_ID,
   API_PLATFORM_PRODUCT_ID,
 ];
 
@@ -77,29 +78,72 @@ export function normalizeProductConfigs(
   const entries = Array.isArray(input) ? input : [];
   for (const raw of entries) {
     if (!raw || typeof raw !== "object") continue;
-    switch (raw.productId) {
+    const productId = raw.productId as
+      | ProductId
+      | typeof LEGACY_CV_PARSER_PRODUCT_ID
+      | undefined;
+    if (productId === LEGACY_CV_PARSER_PRODUCT_ID) {
+      if (seen.has(CV_PARSER_PRODUCT_ID)) continue;
+      normalized.push(
+        createDefaultCvParserConfig(
+          coerceCvParserOptions(
+            raw as Partial<{
+              options: Partial<{
+                accessLevel?: unknown;
+                betaFeatures?: unknown;
+              }>;
+            }>,
+          ),
+        ),
+      );
+      seen.add(CV_PARSER_PRODUCT_ID);
+      continue;
+    }
+    switch (productId) {
       case DOCUMENT_ANALYSIS_PRODUCT_ID: {
         if (seen.has(DOCUMENT_ANALYSIS_PRODUCT_ID)) break;
         normalized.push(
           createDefaultDocumentAnalysisConfig(
-            coerceDocumentPermissions(raw),
+            coerceDocumentPermissions(
+              raw as Partial<{
+                permissions: Partial<Record<string, unknown>>;
+              }>,
+            ),
           ),
         );
         seen.add(DOCUMENT_ANALYSIS_PRODUCT_ID);
         break;
       }
-      case INSIGHTS_SANDBOX_PRODUCT_ID: {
-        if (seen.has(INSIGHTS_SANDBOX_PRODUCT_ID)) break;
+      case CV_PARSER_PRODUCT_ID: {
+        if (seen.has(CV_PARSER_PRODUCT_ID)) break;
         normalized.push(
-          createDefaultInsightsSandboxConfig(coerceInsightsOptions(raw)),
+          createDefaultCvParserConfig(
+            coerceCvParserOptions(
+              raw as Partial<{
+                options: Partial<{
+                  accessLevel?: unknown;
+                  betaFeatures?: unknown;
+                }>;
+              }>,
+            ),
+          ),
         );
-        seen.add(INSIGHTS_SANDBOX_PRODUCT_ID);
+        seen.add(CV_PARSER_PRODUCT_ID);
         break;
       }
       case API_PLATFORM_PRODUCT_ID: {
         if (seen.has(API_PLATFORM_PRODUCT_ID)) break;
         normalized.push(
-          createDefaultApiPlatformConfig(coerceApiPlatformOptions(raw)),
+          createDefaultApiPlatformConfig(
+            coerceApiPlatformOptions(
+              raw as Partial<{
+                options: Partial<{
+                  environment?: unknown;
+                  allowModelTraining?: unknown;
+                }>;
+              }>,
+            ),
+          ),
         );
         seen.add(API_PLATFORM_PRODUCT_ID);
         break;

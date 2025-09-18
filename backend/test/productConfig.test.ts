@@ -4,15 +4,16 @@ import assert from "node:assert/strict";
 import {
   API_PLATFORM_PRODUCT_ID,
   DOCUMENT_ANALYSIS_PRODUCT_ID,
-  INSIGHTS_SANDBOX_PRODUCT_ID,
+  CV_PARSER_PRODUCT_ID,
+  LEGACY_CV_PARSER_PRODUCT_ID,
   PRODUCT_CATALOG,
   createDefaultApiPlatformConfig,
   createDefaultDocumentAnalysisConfig,
-  createDefaultInsightsSandboxConfig,
+  createDefaultCvParserConfig,
   cloneProductConfig,
   isApiPlatformConfig,
   isDocumentAnalysisConfig,
-  isInsightsSandboxConfig,
+  isCvParserConfig,
 } from "../src/shared/types/Products";
 import {
   getProductCatalog,
@@ -28,13 +29,13 @@ test("default product config helpers coerce overrides", () => {
   assert.equal(documentConfig.permissions.evaluateDocument, false);
   assert.equal(isDocumentAnalysisConfig(documentConfig), true);
 
-  const sandboxConfig = createDefaultInsightsSandboxConfig({
+  const cvParserConfig = createDefaultCvParserConfig({
     accessLevel: "write",
     betaFeatures: true,
   });
-  assert.equal(sandboxConfig.options.accessLevel, "write");
-  assert.equal(sandboxConfig.options.betaFeatures, true);
-  assert.equal(isInsightsSandboxConfig(sandboxConfig), true);
+  assert.equal(cvParserConfig.options.accessLevel, "write");
+  assert.equal(cvParserConfig.options.betaFeatures, true);
+  assert.equal(isCvParserConfig(cvParserConfig), true);
 
   const apiConfig = createDefaultApiPlatformConfig({
     environment: "production",
@@ -69,14 +70,14 @@ test("normalizeProductConfigs deduplicates and fills defaults", () => {
       productId: "",
     },
     {
-      productId: INSIGHTS_SANDBOX_PRODUCT_ID,
+      productId: LEGACY_CV_PARSER_PRODUCT_ID,
       options: { accessLevel: "write", betaFeatures: "" },
     },
   ] as any);
 
   assert.deepEqual(normalized.map((c) => c.productId), [
     DOCUMENT_ANALYSIS_PRODUCT_ID,
-    INSIGHTS_SANDBOX_PRODUCT_ID,
+    CV_PARSER_PRODUCT_ID,
     API_PLATFORM_PRODUCT_ID,
   ]);
   const document = normalized[0];
@@ -86,11 +87,11 @@ test("normalizeProductConfigs deduplicates and fills defaults", () => {
     assert.equal(document.permissions.evaluateDocument, false);
   }
 
-  const sandbox = normalized[1];
-  assert.equal(isInsightsSandboxConfig(sandbox), true);
-  if (isInsightsSandboxConfig(sandbox)) {
-    assert.equal(sandbox.options.accessLevel, "write");
-    assert.equal(sandbox.options.betaFeatures, false);
+  const cvParser = normalized[1];
+  assert.equal(isCvParserConfig(cvParser), true);
+  if (isCvParserConfig(cvParser)) {
+    assert.equal(cvParser.options.accessLevel, "write");
+    assert.equal(cvParser.options.betaFeatures, false);
   }
 
   const api = normalized[2];

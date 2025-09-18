@@ -8,12 +8,13 @@ import { useAuth } from "@/context/AuthContext";
 import {
   API_PLATFORM_PRODUCT_ID,
   DOCUMENT_ANALYSIS_PRODUCT_ID,
-  INSIGHTS_SANDBOX_PRODUCT_ID,
+  CV_PARSER_PRODUCT_ID,
+  LEGACY_CV_PARSER_PRODUCT_ID,
   ProductKeyConfig,
   cloneProductConfig,
   isApiPlatformConfig,
   isDocumentAnalysisConfig,
-  isInsightsSandboxConfig,
+  isCvParserConfig,
 } from "@/types/products";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -64,7 +65,7 @@ export default function BillingPage() {
             permissions: { createQuestionSet: true, evaluateDocument: true },
           },
           {
-            productId: INSIGHTS_SANDBOX_PRODUCT_ID,
+            productId: CV_PARSER_PRODUCT_ID,
             options: { accessLevel: "none", betaFeatures: false },
           },
           {
@@ -216,13 +217,25 @@ export default function BillingPage() {
   const canManageUsers = Boolean(permissions?.manageUsers);
   const canViewMembers = canManageUsers || canManageBilling;
   const canViewInternalCosts = Boolean(permissions?.viewInternalCosts);
-  const resolveProductName = (productId: string) =>
-    productCatalog.find((product) => product.id === productId)?.name || productId;
+  const resolveProductName = (productId: string) => {
+    const normalizedId =
+      productId === LEGACY_CV_PARSER_PRODUCT_ID ? CV_PARSER_PRODUCT_ID : productId;
+    const catalogMatch = productCatalog.find(
+      (product) => product.id === normalizedId,
+    );
+    if (catalogMatch) {
+      return catalogMatch.name;
+    }
+    if (normalizedId === CV_PARSER_PRODUCT_ID) {
+      return "CV parser";
+    }
+    return normalizedId;
+  };
   const documentProductConfig = newSet.products.find(
     (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
   );
-  const insightsProductConfig = newSet.products.find(
-    (product) => product.productId === INSIGHTS_SANDBOX_PRODUCT_ID,
+  const cvParserProductConfig = newSet.products.find(
+    (product) => product.productId === CV_PARSER_PRODUCT_ID,
   );
   const apiProductConfig = newSet.products.find(
     (product) => product.productId === API_PLATFORM_PRODUCT_ID,
@@ -230,8 +243,8 @@ export default function BillingPage() {
   const memberDocumentProduct = memberProducts.find(
     (product) => product.productId === DOCUMENT_ANALYSIS_PRODUCT_ID,
   );
-  const memberInsightsProduct = memberProducts.find(
-    (product) => product.productId === INSIGHTS_SANDBOX_PRODUCT_ID,
+  const memberCvParserProduct = memberProducts.find(
+    (product) => product.productId === CV_PARSER_PRODUCT_ID,
   );
   const memberApiProduct = memberProducts.find(
     (product) => product.productId === API_PLATFORM_PRODUCT_ID,
@@ -247,7 +260,7 @@ export default function BillingPage() {
       }
       return grants.length ? grants.join(", ") : "no permissions";
     }
-    if (isInsightsSandboxConfig(product)) {
+    if (isCvParserConfig(product)) {
       const grants = [`access: ${product.options.accessLevel}`];
       if (product.options.betaFeatures) {
         grants.push("beta features");
@@ -685,21 +698,21 @@ export default function BillingPage() {
                   </label>
                 </fieldset>
               )}
-            {insightsProductConfig &&
-              isInsightsSandboxConfig(insightsProductConfig) && (
+            {cvParserProductConfig &&
+              isCvParserConfig(cvParserProductConfig) && (
                 <fieldset className="product-fieldset">
                   <legend>
-                    {resolveProductName(INSIGHTS_SANDBOX_PRODUCT_ID)}
+                    {resolveProductName(CV_PARSER_PRODUCT_ID)}
                   </legend>
                   <label>
                     Access level
                     <select
-                      value={insightsProductConfig.options.accessLevel}
+                      value={cvParserProductConfig.options.accessLevel}
                       onChange={(e) =>
                         updateProductConfig(
-                          INSIGHTS_SANDBOX_PRODUCT_ID,
+                          CV_PARSER_PRODUCT_ID,
                           (config) => {
-                            if (!isInsightsSandboxConfig(config)) return config;
+                            if (!isCvParserConfig(config)) return config;
                             return {
                               ...config,
                               options: {
@@ -722,12 +735,12 @@ export default function BillingPage() {
                   <label>
                     <input
                       type="checkbox"
-                      checked={insightsProductConfig.options.betaFeatures}
+                      checked={cvParserProductConfig.options.betaFeatures}
                       onChange={(e) =>
                         updateProductConfig(
-                          INSIGHTS_SANDBOX_PRODUCT_ID,
+                          CV_PARSER_PRODUCT_ID,
                           (config) => {
-                            if (!isInsightsSandboxConfig(config)) return config;
+                            if (!isCvParserConfig(config)) return config;
                             return {
                               ...config,
                               options: {
@@ -1219,18 +1232,18 @@ export default function BillingPage() {
                           </label>
                         </div>
                       )}
-                    {memberInsightsProduct &&
-                      isInsightsSandboxConfig(memberInsightsProduct) && (
+                    {memberCvParserProduct &&
+                      isCvParserConfig(memberCvParserProduct) && (
                         <div className="product-options">
                           <label>
                             Access level
                             <select
-                              value={memberInsightsProduct.options.accessLevel}
+                              value={memberCvParserProduct.options.accessLevel}
                               onChange={(e) =>
                                 updateMemberProductConfig(
-                                  INSIGHTS_SANDBOX_PRODUCT_ID,
+                                  CV_PARSER_PRODUCT_ID,
                                   (config) => {
-                                    if (!isInsightsSandboxConfig(config)) return config;
+                                    if (!isCvParserConfig(config)) return config;
                                     return {
                                       ...config,
                                       options: {
@@ -1253,12 +1266,12 @@ export default function BillingPage() {
                           <label>
                             <input
                               type="checkbox"
-                              checked={memberInsightsProduct.options.betaFeatures}
+                              checked={memberCvParserProduct.options.betaFeatures}
                               onChange={(e) =>
                                 updateMemberProductConfig(
-                                  INSIGHTS_SANDBOX_PRODUCT_ID,
+                                  CV_PARSER_PRODUCT_ID,
                                   (config) => {
-                                    if (!isInsightsSandboxConfig(config)) return config;
+                                    if (!isCvParserConfig(config)) return config;
                                     return {
                                       ...config,
                                       options: {
