@@ -126,19 +126,14 @@ router.post("/", upload, async (req, res) => {
         }
       }
 
-      // 2) Load questions
-      const {
-        questions,
-        originalUserInput,
-        executionPlan,
-        snippetType,
-        title,
-        id,
-        executionPlanReasoning,
-        status,
-      } = await loadQuestionSet(orgId, questionSetId);
+      const questionSet = await loadQuestionSet(orgId, questionSetId);
+      if (!questionSet) {
+        sendError(new Error(`Question set with ID ${questionSetId} not found.`));
+        res.end();
+        return;
+      }
 
-      if (status !== "active") {
+      if (questionSet.status !== "active") {
         sendError(
           new Error(
             "Question set must be active before snippets can be evaluated.",
@@ -148,14 +143,13 @@ router.post("/", upload, async (req, res) => {
         return;
       }
 
-      if (!questions.length) {
+      if (!questionSet.questions.length) {
         sendEvent("error", { message: "No questions defined." });
         res.end();
         return;
       }
-      sendLog(`Loaded ${questions.length} questions.`);
+      sendLog(`Loaded ${questionSet.questions.length} questions.`);
 
-      // 3) Process snippets
       const convCount = Array.from(
         new Set(allRows.map((r) => r.ConversationId))
       ).filter(Boolean).length;
@@ -165,16 +159,7 @@ router.post("/", upload, async (req, res) => {
         orgId,
         allRows,
         null, // fullSnippet is not used for xlsx
-        {
-          originalUserInput,
-          questions,
-          executionPlan,
-          snippetType,
-          title,
-          id,
-          executionPlanReasoning,
-          qaResults: [],
-        },
+        questionSet,
         {
           sendLog,
           sendEvent,
@@ -185,7 +170,7 @@ router.post("/", upload, async (req, res) => {
       sendLog(`Processed ${convCount} snippets.`);
       sendEvent("done", { message: "All done!" });
       sendEvent("qaResults", {
-        questionSetId: id,
+        questionSetId: questionSet.id,
         qaResults: newQaResults,
       });
       await billResults(newQaResults);
