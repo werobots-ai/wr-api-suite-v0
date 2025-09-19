@@ -1,4 +1,5 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
+import type { JsonWebKey as NodeJsonWebKey } from "node:crypto";
 
 import { getKeycloakConfig, keycloakIssuerUrl } from "./config";
 import { keycloakFetch } from "./http";
@@ -16,8 +17,10 @@ type CachedKey = {
   alg: string;
 };
 
+type KeycloakJwk = NodeJsonWebKey & { kid?: string; alg?: string };
+
 type JwksResponse = {
-  keys: Array<{ kid?: string; alg?: string } & JsonWebKey>;
+  keys: KeycloakJwk[];
 };
 
 let jwksCache: {
