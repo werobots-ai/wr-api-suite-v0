@@ -1,5 +1,7 @@
 import { RequestHandler } from "express";
 import { verifyDevToken } from "../utils/devAuth";
+import { isKeycloakEnabled } from "../utils/keycloak/config";
+import { verifyAccessToken } from "../utils/keycloak/tokens";
 import { getOrganization, getUser, toSafeUser } from "../utils/userStore";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
@@ -10,13 +12,27 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   }
 
   const token = header.replace(/^Bearer\s+/i, "");
-  const session = verifyDevToken(token);
-  if (!session) {
-    res.status(401).json({ error: "Invalid or expired token" });
-    return;
+  let userId: string | null = null;
+  if (isKeycloakEnabled()) {
+    try {
+      const payload = await verifyAccessToken(token);
+      userId = payload.userId;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Invalid or expired token";
+      res.status(401).json({ error: message });
+      return;
+    }
+  } else {
+    const session = verifyDevToken(token);
+    if (!session) {
+      res.status(401).json({ error: "Invalid or expired token" });
+      return;
+    }
+    userId = session.userId;
   }
 
-  const user = await getUser(session.userId);
+  const user = await getUser(userId);
   if (!user || user.status !== "active") {
     res.status(403).json({ error: "User account disabled" });
     return;

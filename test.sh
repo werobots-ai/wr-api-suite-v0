@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export KEYCLOAK_ENABLED="${KEYCLOAK_ENABLED:-0}"
 output=$(npm test --prefix backend "$@" 2>&1)
 status=$?
 printf '%s\n' "$output"

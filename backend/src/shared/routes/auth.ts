@@ -10,6 +10,11 @@ import {
   verifyPassword,
 } from "../utils/userStore";
 import { issueDevToken } from "../utils/devAuth";
+import { isKeycloakEnabled } from "../utils/keycloak/config";
+import {
+  authenticateWithPassword,
+  verifyAccessToken,
+} from "../utils/keycloak/tokens";
 
 const router = Router();
 
@@ -44,7 +49,13 @@ router.post("/dev/signup", express.json(), async (req, res) => {
       ownerPassword,
       billingEmail,
     });
-    const token = issueDevToken(owner.id);
+    let token: string;
+    if (isKeycloakEnabled()) {
+      const auth = await authenticateWithPassword(ownerEmail, ownerPassword);
+      token = auth.accessToken;
+    } else {
+      token = issueDevToken(owner.id);
+    }
     await updateUserLastLogin(owner.id);
     res.json({
       token,
@@ -94,7 +105,13 @@ router.post("/dev/bootstrap", express.json(), async (req, res) => {
         markBootstrapComplete: true,
       },
     );
-    const token = issueDevToken(owner.id);
+    let token: string;
+    if (isKeycloakEnabled()) {
+      const auth = await authenticateWithPassword(ownerEmail, ownerPassword);
+      token = auth.accessToken;
+    } else {
+      token = issueDevToken(owner.id);
+    }
     await updateUserLastLogin(owner.id);
     const updatedStore = await getIdentityStore();
     res.json({
@@ -118,6 +135,42 @@ router.post("/dev/login", express.json(), async (req, res) => {
   }
 
   const user = await getUserByEmail(email);
+  if (isKeycloakEnabled()) {
+    try {
+      const auth = await authenticateWithPassword(email, password);
+      const payload = await verifyAccessToken(auth.accessToken);
+      if (!user || user.id !== payload.userId) {
+        res.status(401).json({ error: "Account mismatch" });
+        return;
+      }
+      await updateUserLastLogin(user.id);
+      const organizations = (
+        await Promise.all(
+          user.organizations.map(async (link) => {
+            const org = await getOrganization(link.orgId);
+            if (!org) return null;
+            const maskCosts = !org.isMaster;
+            return toSafeOrganization(org, { maskCosts });
+          }),
+        )
+      ).filter(
+        (org): org is ReturnType<typeof toSafeOrganization> => org !== null,
+      );
+
+      res.json({
+        token: auth.accessToken,
+        user: toSafeUser(user),
+        organizations,
+      });
+      return;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Authentication failed";
+      res.status(401).json({ error: message });
+      return;
+    }
+  }
+
   if (!user || !verifyPassword(password, user.passwordHash)) {
     res.status(401).json({ error: "Invalid credentials" });
     return;
