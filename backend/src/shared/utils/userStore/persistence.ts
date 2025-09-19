@@ -1,48 +1,69 @@
-import fs from "fs/promises";
-import path from "path";
-
 import { IdentityStoreData } from "../../types/Identity";
-import { IDENTITY_FILE } from "./config";
 import { createBootstrapIdentity } from "./bootstrap";
 import {
   applyStoreSideEffects,
   normalizeIdentity,
   syncInternalOrgIds,
 } from "./identityNormalization";
+import {
+  getItem,
+  putItem,
+  IDENTITY_TABLE_NAME,
+} from "../dynamo";
 
-function identityDirectory(): string {
-  return path.dirname(IDENTITY_FILE);
-}
+const IDENTITY_PK = "IDENTITY";
+const IDENTITY_SK = "STORE";
 
-async function ensureDirectory(): Promise<void> {
-  await fs.mkdir(identityDirectory(), { recursive: true });
-}
+type IdentityItem = {
+  pk: string;
+  sk: string;
+  payload: IdentityStoreData;
+  updatedAt: string;
+};
 
-async function writeIdentityFile(store: IdentityStoreData): Promise<void> {
-  await ensureDirectory();
-  await fs.writeFile(IDENTITY_FILE, JSON.stringify(store, null, 2), "utf-8");
-}
-
-async function readIdentityFile(): Promise<IdentityStoreData | null> {
-  try {
-    const raw = await fs.readFile(IDENTITY_FILE, "utf-8");
-    return JSON.parse(raw) as IdentityStoreData;
-  } catch {
+async function readIdentity(): Promise<IdentityStoreData | null> {
+  const result = await getItem({
+    TableName: IDENTITY_TABLE_NAME,
+    Key: {
+      pk: IDENTITY_PK,
+      sk: IDENTITY_SK,
+    },
+    ConsistentRead: true,
+  });
+  if (!result.Item) {
     return null;
   }
+  const item = result.Item as IdentityItem;
+  return item.payload;
+}
+
+async function writeIdentity(store: IdentityStoreData): Promise<void> {
+  const now = new Date().toISOString();
+  const payload = normalizeIdentity(store);
+  await putItem({
+    TableName: IDENTITY_TABLE_NAME,
+    Item: {
+      pk: IDENTITY_PK,
+      sk: IDENTITY_SK,
+      payload,
+      updatedAt: now,
+    },
+  });
+  syncInternalOrgIds(payload.organizations);
 }
 
 export async function saveIdentity(store: IdentityStoreData): Promise<void> {
-  const normalized = normalizeIdentity(store);
-  await writeIdentityFile(normalized);
-  syncInternalOrgIds(normalized.organizations);
+  await writeIdentity(store);
 }
 
 export async function loadIdentity(): Promise<IdentityStoreData> {
-  const stored = await readIdentityFile();
-  if (stored) return applyStoreSideEffects(stored);
+  const existing = await readIdentity();
+  if (existing) {
+    return applyStoreSideEffects(existing);
+  }
+
   const bootstrap = await createBootstrapIdentity();
-  await saveIdentity(bootstrap);
+  await writeIdentity(bootstrap);
   return applyStoreSideEffects(bootstrap);
 }
 

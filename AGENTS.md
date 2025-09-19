@@ -20,7 +20,7 @@
 ## Backend-specific guidance (`backend/`)
 - Register new HTTP routes in `backend/src/index.ts` and colocate handlers under `backend/src/routes/`. Keep routers small and delegate orchestration to helpers in `backend/src/utils/` or `backend/src/llmCalls/`.
 - When extending billing, question storage, or SSE event payloads, update the corresponding utilities (`recordUsage`, `questionStore`, `initStream`) and ensure emitted event names remain consistent with the frontend listeners.
-- Persisted data lives on disk via JSON helpers in `backend/src/utils/`; update serialization logic carefully to maintain backward compatibility with existing files in `data/`.
+- Persisted data now lives in DynamoDB tables defined under `infrastructure/cdk`. Update the persistence helpers in `backend/src/shared/utils` when making schema changes and document any new environment variables in `backend/.env.sample`.
 - Log actionable context with `console.log`/`console.error`, but avoid leaking secrets (API keys, auth tokens). Prefer structured objects in logs when dealing with multi-field payloads.
 
 ## Frontend-specific guidance (`frontend/`)
