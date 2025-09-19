@@ -27,9 +27,11 @@ import OpenAI from "openai";
 import { ModelKey, models } from "../config/models";
 import { playMacSound } from "./playMacSound";
 
+const PROJECT_ROOT = path.resolve(__dirname, "../../../..");
+const DEFAULT_CACHE_DIR = path.join(PROJECT_ROOT, "data/cache");
 const CACHE_DIR = process.env.CACHE_DIR
   ? path.resolve(process.env.CACHE_DIR)
-  : path.resolve(__dirname, "../../../data/cache");
+  : DEFAULT_CACHE_DIR;
 
 type OpenAIResponse = OpenAI.Chat.Completions.ChatCompletion & {
   _request_id?: string | null;

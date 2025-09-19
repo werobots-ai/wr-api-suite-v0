@@ -9,6 +9,7 @@ import type {
   UserOrganizationLink,
 } from "../src/shared/types/Identity";
 import { DOCUMENT_ANALYSIS_PRODUCT_ID } from "../src/shared/types/Products";
+import { installMockKeycloak } from "./helpers/mockKeycloak";
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
 const identityPath = path.join(tempDir, "identity.json");
@@ -28,6 +29,11 @@ let updateUserLastLogin: typeof import("../src/shared/utils/userStore/users").up
 let attachUserToOrganization: typeof import("../src/shared/utils/userStore/users").attachUserToOrganization;
 let isInternalOrg: typeof import("../src/shared/utils/userStore/config").isInternalOrg;
 let getInternalOrgIds: typeof import("../src/shared/utils/userStore/config").getInternalOrgIds;
+let restoreKeycloakFetch: (() => void) | undefined;
+
+test.before(() => {
+  restoreKeycloakFetch = installMockKeycloak();
+});
 
 test.before(async () => {
   ({ getIdentityStore } = await import(
@@ -63,6 +69,10 @@ test.beforeEach(() => {
       throw error;
     }
   }
+});
+
+test.after(() => {
+  restoreKeycloakFetch?.();
 });
 
 test("bootstrap identity starts empty", { concurrency: false }, async () => {
@@ -244,3 +254,48 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
   const internalIds = getInternalOrgIds();
   assert.equal(internalIds.includes(organization.id), false);
 });
+
+test("keycloak inspection reports organization counts", { concurrency: false }, async () => {
+  const { inspectKeycloakOrganizations } = await import(
+    "../src/shared/utils/keycloak/admin"
+  );
+  const before = await inspectKeycloakOrganizations();
+  const { organization: newOrg } = await createOrganizationWithOwner({
+    organizationName: "Inspection Org",
+    ownerEmail: `inspection-${Date.now()}@example.com`,
+    ownerName: "Inspection Owner",
+    ownerPassword: "inspectpass",
+  });
+  assert.equal(newOrg.isMaster, false);
+  const after = await inspectKeycloakOrganizations();
+  assert.equal(after.organizationCount, before.organizationCount + 1);
+  assert.equal(after.masterOrganizationCount, before.masterOrganizationCount);
+});
+
+test(
+  "keycloak inspection identifies master organizations",
+  { concurrency: false },
+  async () => {
+    const { inspectKeycloakOrganizations } = await import(
+      "../src/shared/utils/keycloak/admin"
+    );
+    const before = await inspectKeycloakOrganizations();
+    const { organization: masterOrg } = await createOrganizationWithOwner(
+      {
+        organizationName: "Inspection Master Org",
+        ownerEmail: `inspection-master-${Date.now()}@example.com`,
+        ownerName: "Inspection Master Owner",
+        ownerPassword: "inspectmasterpass",
+      },
+      {
+        isMaster: true,
+        ownerGlobalRoles: ["MASTER_ADMIN"],
+        markBootstrapComplete: true,
+      },
+    );
+    assert.equal(masterOrg.isMaster, true);
+    const after = await inspectKeycloakOrganizations();
+    assert.equal(after.organizationCount, before.organizationCount + 1);
+    assert.equal(after.masterOrganizationCount, before.masterOrganizationCount + 1);
+  },
+);

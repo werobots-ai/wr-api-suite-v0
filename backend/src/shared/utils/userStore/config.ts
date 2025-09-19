@@ -1,9 +1,7 @@
 import path from "path";
 
-const DEFAULT_IDENTITY_FILE = path.join(
-  __dirname,
-  "../../../data/identity.json",
-);
+const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
+const DEFAULT_IDENTITY_FILE = path.join(PROJECT_ROOT, "data/identity.json");
 
 export const IDENTITY_FILE = process.env.IDENTITY_FILE_PATH
   ? path.resolve(process.env.IDENTITY_FILE_PATH)

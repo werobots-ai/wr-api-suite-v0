@@ -19,6 +19,7 @@ export type CreateOptions = {
   isMaster?: boolean;
   ownerGlobalRoles?: GlobalRole[];
   markBootstrapComplete?: boolean;
+  forcedIds?: Partial<Identifiers>;
 };
 
 export type Creation = {

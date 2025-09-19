@@ -182,9 +182,9 @@ export default function DevAuthPage() {
       <div className="card">
         <h1>Developer Authentication</h1>
         <p>
-          This local-only auth flow mimics the Keycloak integration we will ship later. The forms
-          below let you create an organization and owner account or sign in with existing
-          credentials.
+          This interface provisions organizations and users in Keycloak. The forms below create the
+          corresponding realm resources and return a Keycloak access token that the console uses for
+          authenticated API calls.
         </p>
         {statusInfo?.bootstrapCompletedAt && needsBootstrap === false && (
           <p className="status-line">

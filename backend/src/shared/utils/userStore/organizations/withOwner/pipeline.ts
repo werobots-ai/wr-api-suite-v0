@@ -9,7 +9,7 @@ export function buildCreation(
   params: CreateParams,
   options: CreateOptions,
 ): Creation {
-  const ids = createIdentifiers();
+  const ids = createIdentifiers(options);
   const createdAt = now();
   const products = defaultProducts();
   const keySet = createDefaultKeySet(ids.ownerId);
