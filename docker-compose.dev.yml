@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: wr-api-suite-dynamodb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: wr-api-suite-keycloak
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    command: ["start-dev", "--http-port=8080", "--hostname-strict=false", "--hostname-strict-https=false"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
+volumes:
+  dynamodb_data:
+  keycloak_data:
