@@ -1,19 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
-
 import type {
   UserAccount,
   UserOrganizationLink,
 } from "../src/shared/types/Identity";
 import { DOCUMENT_ANALYSIS_PRODUCT_ID } from "../src/shared/types/Products";
 import { installMockKeycloak } from "./helpers/mockKeycloak";
-
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
-const identityPath = path.join(tempDir, "identity.json");
-process.env.IDENTITY_FILE_PATH = identityPath;
+import { prepareIdentityTestEnv } from "./helpers/identityTestEnv";
 
 let getIdentityStore: typeof import("../src/shared/utils/userStore/persistence").getIdentityStore;
 let createOrganizationWithOwner: typeof import("../src/shared/utils/userStore/organizations").createOrganizationWithOwner;
@@ -36,6 +29,7 @@ test.before(() => {
 });
 
 test.before(async () => {
+  prepareIdentityTestEnv();
   ({ getIdentityStore } = await import(
     "../src/shared/utils/userStore/persistence"
   ));
@@ -62,13 +56,7 @@ test.before(async () => {
 });
 
 test.beforeEach(() => {
-  try {
-    fs.rmSync(identityPath);
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
-    }
-  }
+  prepareIdentityTestEnv();
 });
 
 test.after(() => {
