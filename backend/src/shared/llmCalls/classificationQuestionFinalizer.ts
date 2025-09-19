@@ -141,6 +141,7 @@ ${JSON.stringify(failedAttemptResult)}
                 "description",
                 "questionType",
                 "group",
+                "strict",
                 "choices",
                 "dependencies",
               ],
