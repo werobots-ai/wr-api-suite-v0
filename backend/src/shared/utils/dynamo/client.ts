@@ -73,9 +73,102 @@ type UpdateItemCommandOutput = {
   Attributes?: DynamoItem;
 };
 
+type BillingMode = "PROVISIONED" | "PAY_PER_REQUEST";
+
+type ProjectionType = "ALL" | "KEYS_ONLY" | "INCLUDE";
+
+type AttributeDefinition = {
+  AttributeName: string;
+  AttributeType: "S" | "N" | "B";
+};
+
+type KeySchemaElement = {
+  AttributeName: string;
+  KeyType: "HASH" | "RANGE";
+};
+
+type Projection = {
+  ProjectionType: ProjectionType;
+  NonKeyAttributes?: string[];
+};
+
+type ProvisionedThroughput = {
+  ReadCapacityUnits: number;
+  WriteCapacityUnits: number;
+};
+
+type GlobalSecondaryIndex = {
+  IndexName: string;
+  KeySchema: KeySchemaElement[];
+  Projection: Projection;
+  ProvisionedThroughput?: ProvisionedThroughput;
+};
+
+type CreateTableInput = {
+  TableName: string;
+  AttributeDefinitions: AttributeDefinition[];
+  KeySchema: KeySchemaElement[];
+  BillingMode?: BillingMode;
+  ProvisionedThroughput?: ProvisionedThroughput;
+  GlobalSecondaryIndexes?: GlobalSecondaryIndex[];
+};
+
+type GlobalSecondaryIndexUpdate = {
+  Create?: GlobalSecondaryIndex;
+};
+
+type UpdateTableInput = {
+  TableName: string;
+  AttributeDefinitions?: AttributeDefinition[];
+  GlobalSecondaryIndexUpdates?: GlobalSecondaryIndexUpdate[];
+  BillingMode?: BillingMode;
+  ProvisionedThroughput?: ProvisionedThroughput;
+};
+
+type TableDescription = {
+  TableName?: string;
+  TableStatus?: string;
+  GlobalSecondaryIndexes?: {
+    IndexName?: string;
+    IndexStatus?: string;
+  }[];
+};
+
+type DescribeTableOutput = {
+  Table?: TableDescription;
+};
+
+type TimeToLiveStatus =
+  | "ENABLING"
+  | "DISABLING"
+  | "ENABLED"
+  | "DISABLED"
+  | "UPDATING";
+
+type TimeToLiveDescription = {
+  TimeToLiveStatus?: TimeToLiveStatus;
+  AttributeName?: string;
+};
+
+type DescribeTimeToLiveOutput = {
+  TimeToLiveDescription?: TimeToLiveDescription;
+};
+
 type MarshallContext = {
   removeUndefinedValues: boolean;
 };
+
+export class DynamoHttpError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "DynamoHttpError";
+    this.status = status;
+    this.code = code;
+  }
+}
 
 const DEFAULT_REGION = process.env.AWS_REGION || "us-east-1";
 const DEFAULT_ENDPOINT =
@@ -356,8 +449,24 @@ async function sendDynamoRequest(target: string, body: Record<string, any>) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
+    let code: string | undefined;
+    try {
+      const parsed = JSON.parse(text);
+      const rawCode =
+        typeof parsed === "object" && parsed
+          ? (parsed.__type || parsed.__Type || parsed.code || parsed.Code)
+          : undefined;
+      if (typeof rawCode === "string" && rawCode.length > 0) {
+        const segments = rawCode.split("#");
+        code = segments[segments.length - 1];
+      }
+    } catch (_error) {
+      // Ignore JSON parse failures and fall back to the raw message.
+    }
+    throw new DynamoHttpError(
       `DynamoDB request failed with status ${response.status}: ${text}`,
+      response.status,
+      code,
     );
   }
 
@@ -528,6 +637,204 @@ export async function query(
       ? unmarshallRecord(result.LastEvaluatedKey)
       : undefined,
   };
+}
+
+function toCreateTableBody(input: CreateTableInput): Record<string, any> {
+  const body: Record<string, any> = {
+    TableName: input.TableName,
+    AttributeDefinitions: input.AttributeDefinitions,
+    KeySchema: input.KeySchema,
+  };
+  if (input.BillingMode) {
+    body.BillingMode = input.BillingMode;
+  } else if (input.ProvisionedThroughput) {
+    body.ProvisionedThroughput = input.ProvisionedThroughput;
+  }
+  if (input.GlobalSecondaryIndexes && input.GlobalSecondaryIndexes.length > 0) {
+    body.GlobalSecondaryIndexes = input.GlobalSecondaryIndexes.map((index) => {
+      const gsi: Record<string, any> = {
+        IndexName: index.IndexName,
+        KeySchema: index.KeySchema,
+        Projection: index.Projection,
+      };
+      if (index.ProvisionedThroughput) {
+        gsi.ProvisionedThroughput = index.ProvisionedThroughput;
+      }
+      return gsi;
+    });
+  }
+  return body;
+}
+
+function toUpdateTableBody(input: UpdateTableInput): Record<string, any> {
+  const body: Record<string, any> = {
+    TableName: input.TableName,
+  };
+  if (input.AttributeDefinitions) {
+    body.AttributeDefinitions = input.AttributeDefinitions;
+  }
+  if (input.BillingMode) {
+    body.BillingMode = input.BillingMode;
+  } else if (input.ProvisionedThroughput) {
+    body.ProvisionedThroughput = input.ProvisionedThroughput;
+  }
+  if (
+    input.GlobalSecondaryIndexUpdates &&
+    input.GlobalSecondaryIndexUpdates.length > 0
+  ) {
+    body.GlobalSecondaryIndexUpdates = input.GlobalSecondaryIndexUpdates.map(
+      (update) => {
+        const result: Record<string, any> = {};
+        if (update.Create) {
+          const create: Record<string, any> = {
+            IndexName: update.Create.IndexName,
+            KeySchema: update.Create.KeySchema,
+            Projection: update.Create.Projection,
+          };
+          if (update.Create.ProvisionedThroughput) {
+            create.ProvisionedThroughput = update.Create.ProvisionedThroughput;
+          }
+          result.Create = create;
+        }
+        return result;
+      },
+    );
+  }
+  return body;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+export async function createTable(input: CreateTableInput): Promise<void> {
+  if (useInMemory()) {
+    return;
+  }
+  const body = toCreateTableBody(input);
+  try {
+    await sendDynamoRequest("DynamoDB_20120810.CreateTable", body);
+  } catch (error) {
+    if (
+      error instanceof DynamoHttpError &&
+      (error.code === "ResourceInUseException" ||
+        error.code === "TableAlreadyExistsException")
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function describeTable(
+  tableName: string,
+): Promise<DescribeTableOutput | null> {
+  if (useInMemory()) {
+    return {
+      Table: {
+        TableName: tableName,
+        TableStatus: "ACTIVE",
+      },
+    };
+  }
+  try {
+    const result = await sendDynamoRequest(
+      "DynamoDB_20120810.DescribeTable",
+      { TableName: tableName },
+    );
+    return result as DescribeTableOutput;
+  } catch (error) {
+    if (
+      error instanceof DynamoHttpError &&
+      error.code === "ResourceNotFoundException"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function updateTable(input: UpdateTableInput): Promise<void> {
+  if (useInMemory()) {
+    return;
+  }
+  const body = toUpdateTableBody(input);
+  try {
+    await sendDynamoRequest("DynamoDB_20120810.UpdateTable", body);
+  } catch (error) {
+    if (error instanceof DynamoHttpError && error.code === "ResourceInUseException") {
+      return;
+    }
+    throw error;
+  }
+}
+
+function tableIndexesActive(description: DescribeTableOutput | null): boolean {
+  if (!description?.Table) return false;
+  const tableActive = description.Table.TableStatus === "ACTIVE";
+  if (!tableActive) return false;
+  const indexes = description.Table.GlobalSecondaryIndexes || [];
+  return indexes.every((index) => index.IndexStatus === "ACTIVE");
+}
+
+export async function waitForTableActive(
+  tableName: string,
+  options: { maxAttempts?: number; delayMs?: number } = {},
+): Promise<void> {
+  if (useInMemory()) {
+    return;
+  }
+  const maxAttempts = options.maxAttempts ?? 25;
+  const delayMs = options.delayMs ?? 1000;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const description = await describeTable(tableName);
+    if (tableIndexesActive(description)) {
+      return;
+    }
+    await sleep(delayMs);
+  }
+  throw new Error(`Timed out waiting for DynamoDB table ${tableName} to become ACTIVE`);
+}
+
+export async function describeTimeToLive(
+  tableName: string,
+): Promise<DescribeTimeToLiveOutput | null> {
+  if (useInMemory()) {
+    return { TimeToLiveDescription: { TimeToLiveStatus: "DISABLED" } };
+  }
+  try {
+    const result = await sendDynamoRequest(
+      "DynamoDB_20120810.DescribeTimeToLive",
+      { TableName: tableName },
+    );
+    return result as DescribeTimeToLiveOutput;
+  } catch (error) {
+    if (
+      error instanceof DynamoHttpError &&
+      error.code === "ResourceNotFoundException"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function updateTimeToLive(
+  tableName: string,
+  attributeName: string,
+): Promise<void> {
+  if (useInMemory()) {
+    return;
+  }
+  await sendDynamoRequest("DynamoDB_20120810.UpdateTimeToLive", {
+    TableName: tableName,
+    TimeToLiveSpecification: {
+      AttributeName: attributeName,
+      Enabled: true,
+    },
+  });
 }
 
 export function tableNameFromEnv(

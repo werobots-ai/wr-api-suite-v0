@@ -50,6 +50,10 @@ All runtime data lives under the repository's `data/` directory:
 - OpenAI response caches are stored in the `wr-api-suite-openai-cache` table instead of the
   filesystem. DynamoDB's TTL feature automatically prunes expired entries.
 
+The backend automatically provisions the required DynamoDB tables (identity, question sets,
+and the OpenAI cache) when it boots. No additional setup scripts are required—just run
+`./dev.sh` and the server will create any missing tables and configure TTL on the cache table.
+
 To reset both services to a clean slate, stop any running dev stack and wipe the
 local state with:
 

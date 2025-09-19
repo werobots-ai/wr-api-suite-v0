@@ -18,6 +18,7 @@ export {
   resetInMemoryTables,
 };
 export type { DynamoItem } from "./client";
+export { ensureDynamoTables } from "./bootstrap";
 
 export const IDENTITY_TABLE_NAME = tableNameFromEnv(
   "IDENTITY_TABLE_NAME",
