@@ -63,10 +63,17 @@ export function installMockKeycloak(): () => void {
       const max = Number(parsed.searchParams.get("max") ?? "20");
       const start = Number.isFinite(first) ? Math.max(0, first) : 0;
       const size = Number.isFinite(max) ? Math.max(0, max) : 20;
-      const slice = groups.slice(start, start + size).map((group) => ({
-        ...group,
-        subGroups: [],
-      }));
+      const includeAttributes =
+        parsed.searchParams.get("briefRepresentation") === "false";
+      const slice = groups.slice(start, start + size).map((group) => {
+        const base = { ...group, subGroups: [] as never[] };
+        if (includeAttributes) {
+          return base;
+        }
+        const { attributes, ...withoutAttributes } = base;
+        void attributes;
+        return withoutAttributes;
+      });
       return json(slice);
     }
 

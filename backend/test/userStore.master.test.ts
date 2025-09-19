@@ -271,3 +271,31 @@ test("keycloak inspection reports organization counts", { concurrency: false }, 
   assert.equal(after.organizationCount, before.organizationCount + 1);
   assert.equal(after.masterOrganizationCount, before.masterOrganizationCount);
 });
+
+test(
+  "keycloak inspection identifies master organizations",
+  { concurrency: false },
+  async () => {
+    const { inspectKeycloakOrganizations } = await import(
+      "../src/shared/utils/keycloak/admin"
+    );
+    const before = await inspectKeycloakOrganizations();
+    const { organization: masterOrg } = await createOrganizationWithOwner(
+      {
+        organizationName: "Inspection Master Org",
+        ownerEmail: `inspection-master-${Date.now()}@example.com`,
+        ownerName: "Inspection Master Owner",
+        ownerPassword: "inspectmasterpass",
+      },
+      {
+        isMaster: true,
+        ownerGlobalRoles: ["MASTER_ADMIN"],
+        markBootstrapComplete: true,
+      },
+    );
+    assert.equal(masterOrg.isMaster, true);
+    const after = await inspectKeycloakOrganizations();
+    assert.equal(after.organizationCount, before.organizationCount + 1);
+    assert.equal(after.masterOrganizationCount, before.masterOrganizationCount + 1);
+  },
+);

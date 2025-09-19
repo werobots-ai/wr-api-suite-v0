@@ -382,9 +382,14 @@ async function fetchAllGroups(ctx: AdminContext): Promise<GroupRepresentation[]>
   const pageSize = 50;
   let first = 0;
   while (true) {
+    const params = new URLSearchParams({
+      first: String(first),
+      max: String(pageSize),
+      briefRepresentation: "false",
+    });
     const page = await fetchJson<GroupRepresentation[]>(
       ctx,
-      `/groups?first=${first}&max=${pageSize}`,
+      `/groups?${params.toString()}`,
     );
     if (!Array.isArray(page) || page.length === 0) {
       break;
