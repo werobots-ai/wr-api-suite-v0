@@ -20,6 +20,10 @@ import {
   ProductKeyConfig,
   cloneProductConfig,
 } from "../types/Products";
+import {
+  assertPermission,
+  sanitizeOrganizationForRoles,
+} from "./account/access";
 
 const router = Router();
 
@@ -36,9 +40,6 @@ function getEffectiveRoles(res: express.Response): OrgRole[] {
   return baseRoles;
 }
 
-function assertPermission(roles: OrgRole[], allowed: OrgRole[]): boolean {
-  return allowed.some((role) => roles.includes(role));
-}
 
 router.get("/", async (req, res) => {
   const orgId = res.locals.activeOrgId as string;
@@ -80,10 +81,18 @@ router.get("/", async (req, res) => {
     viewInternalCosts: canViewInternalCosts,
   };
 
+  const maskCosts = !organization.isMaster;
+  const safeOrganization = toSafeOrganization(organization, {
+    maskCosts,
+  });
+  const organizationResponse = sanitizeOrganizationForRoles(
+    safeOrganization,
+    roles,
+    { isSysAdmin: Boolean(res.locals.isSysAdmin) },
+  );
+
   res.json({
-    organization: toSafeOrganization(organization, {
-      maskCosts: !organization.isMaster,
-    }),
+    organization: organizationResponse,
     user,
     permissions,
     productCatalog: getProductCatalog(),
@@ -93,14 +102,21 @@ router.get("/", async (req, res) => {
 });
 
 router.get("/organizations", async (_req, res) => {
-  const user = res.locals.user as { organizations: { orgId: string }[] };
+  const user = res.locals.user as {
+    organizations: { orgId: string; roles?: OrgRole[] }[];
+  };
+  const isSysAdmin = Boolean(res.locals.isSysAdmin);
   const organizations = (
     await Promise.all(
       user.organizations.map(async (link) => {
         const org = await getOrganization(link.orgId);
         if (!org) return null;
         const maskCosts = !org.isMaster;
-        return toSafeOrganization(org, { maskCosts });
+        const safeOrganization = toSafeOrganization(org, { maskCosts });
+        const roles = Array.isArray(link.roles) ? link.roles : [];
+        return sanitizeOrganizationForRoles(safeOrganization, roles, {
+          isSysAdmin,
+        });
       }),
     )
   ).filter(
