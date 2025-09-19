@@ -1,12 +1,3 @@
-import path from "path";
-
-const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
-const DEFAULT_IDENTITY_FILE = path.join(PROJECT_ROOT, "data/identity.json");
-
-export const IDENTITY_FILE = process.env.IDENTITY_FILE_PATH
-  ? path.resolve(process.env.IDENTITY_FILE_PATH)
-  : DEFAULT_IDENTITY_FILE;
-
 export const KEY_SECRET = process.env.API_KEY_SECRET || "local-dev-secret";
 export const HASH_SECRET = process.env.API_KEY_HASH_SECRET || KEY_SECRET;
 

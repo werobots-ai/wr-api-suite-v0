@@ -20,18 +20,16 @@ if (CACHE_SPEED_RATIO !== undefined) {
   );
 }
 
-import fs from "fs/promises";
-import path from "path";
 import crypto from "crypto";
 import OpenAI from "openai";
 import { ModelKey, models } from "../config/models";
 import { playMacSound } from "./playMacSound";
-
-const PROJECT_ROOT = path.resolve(__dirname, "../../../..");
-const DEFAULT_CACHE_DIR = path.join(PROJECT_ROOT, "data/cache");
-const CACHE_DIR = process.env.CACHE_DIR
-  ? path.resolve(process.env.CACHE_DIR)
-  : DEFAULT_CACHE_DIR;
+import {
+  getItem,
+  putItem,
+  OPENAI_CACHE_TABLE_NAME,
+  OPENAI_CACHE_TTL_SECONDS,
+} from "./dynamo";
 
 type OpenAIResponse = OpenAI.Chat.Completions.ChatCompletion & {
   _request_id?: string | null;
@@ -48,6 +46,16 @@ interface CacheEntry {
   timestampStart: string;
   timestampEnd: string;
   durationMs: number;
+}
+
+interface CacheTableItem {
+  cacheKey: string;
+  modelKey: ModelKey;
+  entry: CacheEntry;
+  hashSource: string;
+  expiresAt: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const recursivelyCleanObject = (obj: any): string => {
@@ -99,7 +107,6 @@ export async function openAIWithCache(
     total_tokens: number;
   };
 }> {
-  await fs.mkdir(CACHE_DIR, { recursive: true });
   const cfg = models[modelKey];
   if (!cfg) throw new Error(`Unknown model key "${modelKey}"`);
 
@@ -114,42 +121,52 @@ export async function openAIWithCache(
   };
 
   const hash = getObjectHash(params);
-  const cacheFile = path.join(CACHE_DIR, `${hash}.json`);
+  const cacheKey = hash;
+  const nowEpoch = Math.floor(Date.now() / 1000);
 
-  // Cache hit
   try {
-    const raw = await fs.readFile(cacheFile, "utf-8");
-    const entry: CacheEntry = JSON.parse(raw);
+    const cached = await getItem({
+      TableName: OPENAI_CACHE_TABLE_NAME,
+      Key: {
+        cacheKey,
+      },
+      ConsistentRead: true,
+    });
+    if (cached.Item) {
+      const item = cached.Item as CacheTableItem;
+      if (!item.expiresAt || item.expiresAt > nowEpoch) {
+        const entry = item.entry;
 
-    const cachedCostPrompt =
-      entry.usage.prompt_tokens_details!.cached_tokens! *
-      (cfg.cost.cachedIn / cfg.cost.quantity);
-    const costPrompt =
-      (entry.usage.prompt_tokens -
-        entry.usage.prompt_tokens_details!.cached_tokens!) *
-        (cfg.cost.in / cfg.cost.quantity) +
-      cachedCostPrompt;
-    const costCompletion =
-      entry.usage.completion_tokens * (cfg.cost.out / cfg.cost.quantity);
-    const totalCost = costPrompt + costCompletion;
+        const cachedCostPrompt =
+          entry.usage.prompt_tokens_details!.cached_tokens! *
+          (cfg.cost.cachedIn / cfg.cost.quantity);
+        const costPrompt =
+          (entry.usage.prompt_tokens -
+            entry.usage.prompt_tokens_details!.cached_tokens!) *
+            (cfg.cost.in / cfg.cost.quantity) +
+          cachedCostPrompt;
+        const costCompletion =
+          entry.usage.completion_tokens * (cfg.cost.out / cfg.cost.quantity);
+        const totalCost = costPrompt + costCompletion;
 
-    if (CACHE_SPEED_RATIO !== undefined) {
-      const delayMs = Math.round(entry.durationMs * CACHE_SPEED_RATIO);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (CACHE_SPEED_RATIO !== undefined) {
+          const delayMs = Math.round(entry.durationMs * CACHE_SPEED_RATIO);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+
+        playMacSound(0);
+
+        return {
+          response: entry.response,
+          costPrompt,
+          costCompletion,
+          totalCost,
+          usage: entry.usage,
+        };
+      }
     }
-
-    // Serve the cached response without touching the network.
-    playMacSound(0);
-
-    return {
-      response: entry.response,
-      costPrompt,
-      costCompletion,
-      totalCost,
-      usage: entry.usage,
-    };
-  } catch {
-    // Cache miss: fall back to the live API call below.
+  } catch (error) {
+    console.warn("Failed to read cache entry from DynamoDB", error);
   }
 
   const start = Date.now();
@@ -181,7 +198,25 @@ export async function openAIWithCache(
     durationMs: end - start,
   };
 
-  await fs.writeFile(cacheFile, JSON.stringify(entry, null, 2), "utf-8");
+  const expiresAt = Math.floor(end / 1000) + OPENAI_CACHE_TTL_SECONDS;
+  const item: CacheTableItem = {
+    cacheKey,
+    modelKey,
+    entry,
+    hashSource: entry.hashSource,
+    expiresAt,
+    createdAt: entry.timestampStart,
+    updatedAt: entry.timestampEnd,
+  };
+
+  try {
+    await putItem({
+      TableName: OPENAI_CACHE_TABLE_NAME,
+      Item: item,
+    });
+  } catch (error) {
+    console.warn("Failed to persist cache entry to DynamoDB", error);
+  }
 
   return { response: resp, costPrompt, costCompletion, totalCost, usage };
 }

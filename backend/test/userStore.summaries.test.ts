@@ -1,7 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-
 import {
   summarizeUsageEntries,
   summarizeTopUps,
@@ -12,9 +10,7 @@ import type {
   IdentityStoreData,
   UsageEntry,
 } from "../src/shared/types/Identity";
-import { getIdentityTestPath } from "./helpers/identityTestEnv";
-
-const identityPath = getIdentityTestPath();
+import { prepareIdentityTestEnv } from "./helpers/identityTestEnv";
 
 const sampleUsage: UsageEntry[] = [
   {
@@ -265,9 +261,13 @@ test("getPlatformOverview aggregates usage, top ups, and membership", { concurre
     },
     auditLog: [],
     metadata: { bootstrapCompletedAt: null },
-  };
+};
 
-  await fs.rm(identityPath, { force: true });
+test.before(() => {
+  prepareIdentityTestEnv();
+});
+
+  prepareIdentityTestEnv();
   await saveIdentity(store);
 
   const overview = await getPlatformOverview();
