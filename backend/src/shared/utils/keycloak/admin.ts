@@ -56,6 +56,15 @@ type CreateUserParams = {
   organizationId: string;
 };
 
+type SyncOrgUserParams = {
+  userId?: string;
+  email: string;
+  name: string;
+  password?: string;
+  roles: string[];
+  organizationId: string;
+};
+
 type CreateGroupParams = {
   name: string;
   isMaster: boolean;
@@ -89,6 +98,18 @@ async function adminFetch(
     headers.set("Content-Type", "application/json");
   }
   return keycloakFetch(url, { ...init, headers });
+}
+
+function deriveUserNames(
+  email: string,
+  fullName: string,
+): { firstName: string; lastName: string } {
+  const trimmedName = fullName.trim();
+  const parts = trimmedName.split(/\s+/).filter((part) => part.length > 0);
+  const fallbackName = email.split("@")[0] || email;
+  const firstName = parts[0] ?? fallbackName;
+  const lastName = parts.length > 1 ? parts.slice(1).join(" ") : firstName;
+  return { firstName, lastName };
 }
 
 async function fetchJson<T>(
@@ -270,12 +291,7 @@ async function createUser(
   ctx: AdminContext,
   params: CreateUserParams,
 ): Promise<UserRepresentation> {
-  const trimmedName = params.name.trim();
-  const nameParts = trimmedName.split(/\s+/).filter((part) => part.length > 0);
-  const fallbackName = params.email.split("@")[0] || params.email;
-  const firstName = nameParts[0] ?? fallbackName;
-  const lastName =
-    nameParts.length > 1 ? nameParts.slice(1).join(" ") : firstName;
+  const { firstName, lastName } = deriveUserNames(params.email, params.name);
   const body = {
     username: params.email,
     email: params.email,
@@ -369,6 +385,62 @@ async function assignGlobalRoles(
   });
 }
 
+async function fetchUserById(
+  ctx: AdminContext,
+  userId: string,
+): Promise<UserRepresentation | null> {
+  const res = await adminFetch(ctx, `/users/${userId}`);
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `Failed to fetch user (${res.status} ${res.statusText}): ${text}`,
+    );
+  }
+  return (await res.json()) as UserRepresentation;
+}
+
+async function findUserByEmail(
+  ctx: AdminContext,
+  email: string,
+): Promise<UserRepresentation | null> {
+  const params = new URLSearchParams({
+    email,
+    exact: "true",
+    briefRepresentation: "false",
+  });
+  const res = await adminFetch(ctx, `/users?${params.toString()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `Failed to search users (${res.status} ${res.statusText}): ${text}`,
+    );
+  }
+  const data = (await res.json()) as UserRepresentation[];
+  const normalized = email.toLowerCase();
+  return (
+    data.find((user) => {
+      const byEmail = user.email?.toLowerCase() === normalized;
+      const byUsername = user.username?.toLowerCase() === normalized;
+      return byEmail || byUsername;
+    }) ?? null
+  );
+}
+
+function mergeAttribute(
+  attributes: Record<string, string[]> | undefined,
+  key: string,
+  value: string,
+): Record<string, string[]> {
+  const next: Record<string, string[]> = { ...(attributes ?? {}) };
+  const existing = new Set(next[key] ?? []);
+  existing.add(value);
+  next[key] = Array.from(existing);
+  return next;
+}
+
 function flattenGroup(group: GroupRepresentation): GroupRepresentation[] {
   const flattened: GroupRepresentation[] = [group];
   for (const child of group.subGroups ?? []) {
@@ -451,6 +523,84 @@ export async function provisionOrganization(
     organizationId: group.id,
     ownerId: user.id,
   };
+}
+
+export async function syncOrganizationUser(
+  params: SyncOrgUserParams,
+): Promise<{ userId: string; created: boolean }> {
+  const config = getKeycloakConfig();
+  const token = await getAdminToken(config);
+  const ctx: AdminContext = { config, token };
+  await ensureRealm(ctx);
+  await ensureClient(ctx);
+
+  const desiredNames = deriveUserNames(params.email, params.name);
+
+  let existing: UserRepresentation | null = null;
+  if (params.userId) {
+    existing = await fetchUserById(ctx, params.userId);
+  }
+  if (!existing) {
+    existing = await findUserByEmail(ctx, params.email);
+  }
+
+  if (!existing) {
+    if (!params.password) {
+      throw new Error("Password is required when creating Keycloak users");
+    }
+    const created = await createUser(ctx, {
+      email: params.email,
+      name: params.name,
+      password: params.password,
+      roles: params.roles,
+      organizationId: params.organizationId,
+    });
+    await assignUserToGroup(ctx, created.id, params.organizationId);
+    return { userId: created.id, created: true };
+  }
+
+  const attributesWithOrg = mergeAttribute(
+    existing.attributes,
+    ORG_ID_ATTRIBUTE,
+    params.organizationId,
+  );
+  const roleValue = params.roles.join(",");
+  const mergedAttributes = mergeAttribute(
+    attributesWithOrg,
+    ORG_ROLE_ATTRIBUTE,
+    roleValue,
+  );
+
+  const body = {
+    username: params.email,
+    email: params.email,
+    emailVerified: true,
+    enabled: true,
+    firstName: desiredNames.firstName,
+    lastName: desiredNames.lastName,
+    requiredActions: [],
+    attributes: mergedAttributes,
+  } satisfies Partial<UserRepresentation>;
+
+  await adminFetch(ctx, `/users/${existing.id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+  if (params.password) {
+    await adminFetch(ctx, `/users/${existing.id}/reset-password`, {
+      method: "PUT",
+      body: JSON.stringify({
+        type: "password",
+        value: params.password,
+        temporary: false,
+      }),
+    });
+  }
+
+  await assignUserToGroup(ctx, existing.id, params.organizationId);
+
+  return { userId: existing.id, created: false };
 }
 
 export type { OrganizationInspection };
