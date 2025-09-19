@@ -9,6 +9,7 @@ import type {
   UserOrganizationLink,
 } from "../src/shared/types/Identity";
 import { DOCUMENT_ANALYSIS_PRODUCT_ID } from "../src/shared/types/Products";
+import { installMockKeycloak } from "./helpers/mockKeycloak";
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
 const identityPath = path.join(tempDir, "identity.json");
@@ -28,6 +29,11 @@ let updateUserLastLogin: typeof import("../src/shared/utils/userStore/users").up
 let attachUserToOrganization: typeof import("../src/shared/utils/userStore/users").attachUserToOrganization;
 let isInternalOrg: typeof import("../src/shared/utils/userStore/config").isInternalOrg;
 let getInternalOrgIds: typeof import("../src/shared/utils/userStore/config").getInternalOrgIds;
+let restoreKeycloakFetch: (() => void) | undefined;
+
+test.before(() => {
+  restoreKeycloakFetch = installMockKeycloak();
+});
 
 test.before(async () => {
   ({ getIdentityStore } = await import(
@@ -63,6 +69,10 @@ test.beforeEach(() => {
       throw error;
     }
   }
+});
+
+test.after(() => {
+  restoreKeycloakFetch?.();
 });
 
 test("bootstrap identity starts empty", { concurrency: false }, async () => {

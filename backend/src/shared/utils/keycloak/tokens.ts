@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
-import { getKeycloakConfig, isKeycloakEnabled, keycloakIssuerUrl } from "./config";
+import { getKeycloakConfig, keycloakIssuerUrl } from "./config";
+import { keycloakFetch } from "./http";
 
 type TokenPayload = {
   userId: string;
@@ -42,7 +43,7 @@ async function fetchJwks(): Promise<Map<string, CachedKey>> {
   const config = getKeycloakConfig();
   const issuer = keycloakIssuerUrl();
   const url = `${issuer}/protocol/openid-connect/certs`;
-  const res = await fetch(url);
+  const res = await keycloakFetch(url);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Failed to fetch Keycloak JWKS (${res.status}): ${text}`);
@@ -87,9 +88,6 @@ function validateExpiration(payload: Record<string, unknown>) {
 }
 
 export async function verifyAccessToken(token: string): Promise<TokenPayload> {
-  if (!isKeycloakEnabled()) {
-    throw new Error("Keycloak integration disabled");
-  }
   const segments = token.split(".");
   if (segments.length !== 3) {
     throw new Error("Invalid JWT structure");
@@ -145,9 +143,6 @@ export async function authenticateWithPassword(
   password: string,
 ): Promise<{ accessToken: string; expiresIn: number; refreshToken?: string }> {
   const config = getKeycloakConfig();
-  if (!config.enabled) {
-    throw new Error("Keycloak integration disabled");
-  }
   const tokenUrl = `${config.baseUrl}/realms/${config.realm}/protocol/openid-connect/token`;
   const body = new URLSearchParams();
   body.set("grant_type", "password");
@@ -157,7 +152,7 @@ export async function authenticateWithPassword(
   }
   body.set("username", username);
   body.set("password", password);
-  const res = await fetch(tokenUrl, {
+  const res = await keycloakFetch(tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

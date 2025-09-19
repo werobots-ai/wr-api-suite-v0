@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 import { getKeycloakConfig, KeycloakConfig } from "./config";
+import { keycloakFetch } from "./http";
 import { slugify } from "../userStore/helpers";
 
 type AdminContext = {
@@ -78,7 +79,7 @@ async function adminFetch(
   if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(url, { ...init, headers });
+  return keycloakFetch(url, { ...init, headers });
 }
 
 async function fetchJson<T>(
@@ -101,7 +102,7 @@ async function fetchJson<T>(
 
 async function ensureRealm(ctx: AdminContext): Promise<void> {
   const url = `${ctx.config.baseUrl}/admin/realms/${ctx.config.realm}`;
-  const res = await fetch(url, {
+  const res = await keycloakFetch(url, {
     headers: { Authorization: `Bearer ${ctx.token}` },
   });
   if (res.ok) return;
@@ -117,7 +118,7 @@ async function ensureRealm(ctx: AdminContext): Promise<void> {
     enabled: true,
     displayName: "WeRobots",
   };
-  const createRes = await fetch(`${ctx.config.baseUrl}/admin/realms`, {
+  const createRes = await keycloakFetch(`${ctx.config.baseUrl}/admin/realms`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${ctx.token}`,
@@ -353,12 +354,6 @@ export async function provisionOrganization(
   owner: { email: string; name: string; password: string; globalRoles: string[] },
 ): Promise<ProvisionResult> {
   const config = getKeycloakConfig();
-  if (!config.enabled) {
-    return {
-      organizationId: crypto.randomUUID(),
-      ownerId: crypto.randomUUID(),
-    };
-  }
   const token = await getAdminToken(config);
   const ctx: AdminContext = { config, token };
   await ensureRealm(ctx);
@@ -384,16 +379,13 @@ export async function provisionOrganization(
 }
 
 async function getAdminToken(config: KeycloakConfig): Promise<string> {
-  if (!config.enabled) {
-    return "";
-  }
   const tokenUrl = `${config.baseUrl}/realms/master/protocol/openid-connect/token`;
   const body = new URLSearchParams();
   body.set("grant_type", "password");
   body.set("client_id", "admin-cli");
   body.set("username", config.adminUsername);
   body.set("password", config.adminPassword);
-  const res = await fetch(tokenUrl, {
+  const res = await keycloakFetch(tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

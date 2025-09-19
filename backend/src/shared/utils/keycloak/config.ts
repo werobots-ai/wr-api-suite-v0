@@ -1,7 +1,6 @@
 import { URL } from "url";
 
 type KeycloakConfig = {
-  enabled: boolean;
   baseUrl: string;
   realm: string;
   clientId: string;
@@ -31,19 +30,10 @@ function normalizeBaseUrl(raw: string): string {
   }
 }
 
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off", ""].includes(normalized)) return false;
-  return fallback;
-}
-
 let cachedConfig: KeycloakConfig | null = null;
 
 export function getKeycloakConfig(): KeycloakConfig {
   if (cachedConfig) return cachedConfig;
-  const enabled = parseBoolean(process.env.KEYCLOAK_ENABLED, true);
   const baseUrl = normalizeBaseUrl(
     process.env.KEYCLOAK_BASE_URL || DEFAULTS.baseUrl,
   );
@@ -57,7 +47,6 @@ export function getKeycloakConfig(): KeycloakConfig {
     process.env.KEYCLOAK_ADMIN_PASSWORD || DEFAULTS.adminPassword;
 
   cachedConfig = {
-    enabled,
     baseUrl,
     realm,
     clientId,
@@ -66,11 +55,6 @@ export function getKeycloakConfig(): KeycloakConfig {
     adminPassword,
   };
   return cachedConfig;
-}
-
-export function isKeycloakEnabled(): boolean {
-  const config = getKeycloakConfig();
-  return config.enabled;
 }
 
 export function keycloakIssuerUrl(): string {

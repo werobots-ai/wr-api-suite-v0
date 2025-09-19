@@ -13,7 +13,7 @@ import {
   normalizeProductConfigs,
   toSafeUser,
 } from "./userStore";
-import { verifyDevToken } from "./devAuth";
+import { verifyAccessToken } from "./keycloak/tokens";
 
 interface ProductAuthOptions {
   productId: ProductId;
@@ -36,13 +36,18 @@ export function createProductApiKeyAuth({
       req.header("authorization") || req.header("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.replace(/^Bearer\s+/i, "");
-      const session = verifyDevToken(token);
-      if (!session) {
-        res.status(401).json({ error: "Invalid or expired token" });
+      let userId: string;
+      try {
+        const payload = await verifyAccessToken(token);
+        userId = payload.userId;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid or expired token";
+        res.status(401).json({ error: message });
         return;
       }
 
-      const user = await getUser(session.userId);
+      const user = await getUser(userId);
       if (!user || user.status !== "active") {
         res.status(403).json({ error: "User account disabled" });
         return;

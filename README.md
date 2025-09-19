@@ -23,9 +23,9 @@ The WR API Suite monorepo houses the first production-ready pipeline for WeRobot
 - To point at a different Keycloak instance set the following variables (see `backend/.env.sample`):
   `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`,
   `KEYCLOAK_ADMIN_USERNAME`, and `KEYCLOAK_ADMIN_PASSWORD`.
-- Automated tests disable the Keycloak integration by default (`KEYCLOAK_ENABLED=0`). When running
-  end-to-end flows against a live Keycloak deployment leave the flag at `1` so tokens are validated
-  against the realm.
+- Automated tests expect these values to resolve to a reachable Keycloak realm. When running the
+  suite locally outside `dev.sh`, export the variables above so the backend can fetch JWKS and issue
+  password grants against your instance.
 
 ## Local infrastructure
 
