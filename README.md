@@ -48,7 +48,19 @@ All runtime data lives under the repository's `data/` directory:
 - `data/dynamodb/` holds the DynamoDB Local file store.
 - `data/cache/` contains optional OpenAI response caches when `CACHE_DIR` is left unset.
 
-Remove or rename these folders to reset local state between runs.
+To reset both services to a clean slate, stop any running dev stack and wipe the
+local state with:
+
+```bash
+npm run reset-local
+```
+
+The script tears down the Docker Compose services if Docker is available and
+removes the `data/keycloak/`, `data/dynamodb/`, and `data/identity.json`
+artifacts so the next `./dev.sh` run starts from an empty environment.
+
+Remove or rename the folders above manually if you prefer finer-grained
+cleanup.
 
 You can manage the containers independently with the Docker CLI if needed, for example:
 

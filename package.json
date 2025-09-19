@@ -1,0 +1,7 @@
+{
+  "name": "wr-api-suite",
+  "private": true,
+  "scripts": {
+    "reset-local": "bash ./scripts/reset-local.sh"
+  }
+}
