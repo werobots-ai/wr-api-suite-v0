@@ -148,6 +148,13 @@ const QuestionSetPage: React.FC<
       return finalizedAt;
     }
   }, [finalizedAt]);
+  type ConfirmationState =
+    | { type: "save" }
+    | { type: "finalize" }
+    | { type: "activation"; nextActive: boolean };
+  const [confirmation, setConfirmation] = useState<ConfirmationState | null>(
+    null,
+  );
   const confirmationContent = useMemo(() => {
     if (!confirmation) return null;
     switch (confirmation.type) {
@@ -249,13 +256,6 @@ const QuestionSetPage: React.FC<
   const [countdown, setCountdown] = useState<number>(0);
   const [timerCanceled, setTimerCanceled] = useState<boolean>(false);
 
-  type ConfirmationState =
-    | { type: "save" }
-    | { type: "finalize" }
-    | { type: "activation"; nextActive: boolean };
-  const [confirmation, setConfirmation] = useState<ConfirmationState | null>(
-    null,
-  );
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
   useEffect(() => {
