@@ -1329,6 +1329,37 @@ const QuestionSetPage: React.FC<
                         + Add choice
                       </button>
                     )}
+                    <h3 className="details-section-header">
+                      Strict short answer enforcement
+                    </h3>
+                    <label className="strict-toggle">
+                      <input
+                        type="checkbox"
+                        className="details-field"
+                        disabled={!editingDetails}
+                        checked={Boolean(selectedQuestion.strict)}
+                        onChange={(e) => {
+                          if (!selectedQuestion || !canEditCurrentSet) return;
+                          const strict = e.target.checked;
+                          updateQuestionSetField((prev) => ({
+                            ...prev,
+                            questions: prev.questions.map((q) =>
+                              q.questionId === selectedQuestion.questionId
+                                ? { ...q, strict }
+                                : q,
+                            ),
+                          }));
+                        }}
+                      />
+                      <span>
+                        Force the model to return exactly one of the defined
+                        labels via the response schema.
+                      </span>
+                    </label>
+                    <p className="strict-toggle-description">
+                      When disabled, the model still sees the labels in the
+                      prompt but can technically emit free-form text.
+                    </p>
                   </>
                 )}
 
@@ -2591,6 +2622,20 @@ const QuestionSetPage: React.FC<
         .details-field.choice.range-title {
           flex: 1;
           white-space: nowrap;
+        }
+
+        .strict-toggle {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .strict-toggle span {
+          font-size: 0.95rem;
+        }
+        .strict-toggle-description {
+          font-size: 0.875rem;
+          color: #666;
+          margin-top: 0.5rem;
         }
 
         /* Force no gap for markdown list headers (scale and classification ranges) */

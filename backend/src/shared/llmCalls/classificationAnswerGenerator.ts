@@ -29,14 +29,22 @@ export async function classificationAnswerGenerator(
     description,
     // classification-specific fields
     choices,
+    strict,
     // shared guidance fields
     questionText,
   } = question as ClassificationQuestion;
 
-  const choiceLabels = choices.map((c) => c.label).join(", ");
+  const choiceLabelsList = choices.map((c) => c.label);
+  const choiceLabels = choiceLabelsList.join(", ");
   const choiceCriteria = choices
     .map((c) => `- ${c.label}: ${c.criteria}`)
     .join("\n");
+
+  const enforceEnum = Boolean(strict);
+  const shortAnswerSchema =
+    enforceEnum && choiceLabelsList.length > 0
+      ? { type: "string", enum: choiceLabelsList }
+      : { type: "string" };
 
   const answerPrompt: OpenAI.ChatCompletionMessageParam[] = [
     {
@@ -92,7 +100,7 @@ ${getGroupedReasoningWarning(questions, question)}
             properties: {
               reasoning: { type: "string" },
               detailed_answer: { type: "string" },
-              short_answer: { type: "string" },
+              short_answer: shortAnswerSchema,
             },
             required: ["reasoning", "detailed_answer", "short_answer"],
             additionalProperties: false,
