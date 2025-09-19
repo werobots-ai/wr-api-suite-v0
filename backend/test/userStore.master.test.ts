@@ -254,3 +254,20 @@ test("user lifecycle and usage recording", { concurrency: false }, async () => {
   const internalIds = getInternalOrgIds();
   assert.equal(internalIds.includes(organization.id), false);
 });
+
+test("keycloak inspection reports organization counts", { concurrency: false }, async () => {
+  const { inspectKeycloakOrganizations } = await import(
+    "../src/shared/utils/keycloak/admin"
+  );
+  const before = await inspectKeycloakOrganizations();
+  const { organization: newOrg } = await createOrganizationWithOwner({
+    organizationName: "Inspection Org",
+    ownerEmail: `inspection-${Date.now()}@example.com`,
+    ownerName: "Inspection Owner",
+    ownerPassword: "inspectpass",
+  });
+  assert.equal(newOrg.isMaster, false);
+  const after = await inspectKeycloakOrganizations();
+  assert.equal(after.organizationCount, before.organizationCount + 1);
+  assert.equal(after.masterOrganizationCount, before.masterOrganizationCount);
+});

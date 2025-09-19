@@ -12,16 +12,51 @@ import {
   authenticateWithPassword,
   verifyAccessToken,
 } from "../utils/keycloak/tokens";
+import { inspectKeycloakOrganizations } from "../utils/keycloak/admin";
 
 const router = Router();
 
 router.get("/dev/status", async (_req, res) => {
   const store = await getIdentityStore();
-  const needsBootstrap = Object.keys(store.users).length === 0;
+  const storeNeedsBootstrap = Object.keys(store.users).length === 0;
+  const keycloakState: {
+    reachable: boolean;
+    organizationCount: number;
+    masterOrganizationCount: number;
+    error?: string;
+  } = {
+    reachable: false,
+    organizationCount: 0,
+    masterOrganizationCount: 0,
+  };
+
+  let keycloakNeedsBootstrap = false;
+  try {
+    const summary = await inspectKeycloakOrganizations();
+    keycloakState.reachable = true;
+    keycloakState.organizationCount = summary.organizationCount;
+    keycloakState.masterOrganizationCount = summary.masterOrganizationCount;
+    keycloakNeedsBootstrap = summary.masterOrganizationCount === 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    keycloakState.error = message;
+    keycloakNeedsBootstrap = false;
+    console.warn("Failed to inspect Keycloak organizations", error);
+  }
+
+  const needsBootstrap = storeNeedsBootstrap || keycloakNeedsBootstrap;
+  const mismatch =
+    keycloakState.reachable && keycloakNeedsBootstrap && !storeNeedsBootstrap;
+
   res.json({
     needsBootstrap,
     bootstrapCompletedAt: store.metadata.bootstrapCompletedAt,
     organizationCount: Object.keys(store.organizations).length,
+    keycloak: {
+      ...keycloakState,
+      needsBootstrap: keycloakNeedsBootstrap,
+      mismatched: mismatch || undefined,
+    },
   });
 });
 

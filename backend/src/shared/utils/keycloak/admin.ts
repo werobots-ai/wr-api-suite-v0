@@ -33,6 +33,7 @@ type GroupRepresentation = {
   name: string;
   path: string;
   attributes?: Record<string, string[]>;
+  subGroups?: GroupRepresentation[];
 };
 
 type UserRepresentation = {
@@ -41,6 +42,9 @@ type UserRepresentation = {
   email?: string;
   firstName?: string;
   lastName?: string;
+  emailVerified?: boolean;
+  enabled?: boolean;
+  requiredActions?: string[];
   attributes?: Record<string, string[]>;
 };
 
@@ -67,6 +71,11 @@ const ORG_ROLE_ATTRIBUTE = "wr_org_roles";
 const ORG_ID_ATTRIBUTE = "wr_org_id";
 const ORG_SLUG_ATTRIBUTE = "wr_org_slug";
 const ORG_MASTER_ATTRIBUTE = "wr_org_master";
+
+type OrganizationInspection = {
+  organizationCount: number;
+  masterOrganizationCount: number;
+};
 
 async function adminFetch(
   ctx: AdminContext,
@@ -261,13 +270,20 @@ async function createUser(
   ctx: AdminContext,
   params: CreateUserParams,
 ): Promise<UserRepresentation> {
-  const firstName = params.name.trim();
+  const trimmedName = params.name.trim();
+  const nameParts = trimmedName.split(/\s+/).filter((part) => part.length > 0);
+  const fallbackName = params.email.split("@")[0] || params.email;
+  const firstName = nameParts[0] ?? fallbackName;
+  const lastName =
+    nameParts.length > 1 ? nameParts.slice(1).join(" ") : firstName;
   const body = {
     username: params.email,
     email: params.email,
     emailVerified: true,
     enabled: true,
     firstName,
+    lastName,
+    requiredActions: [],
     attributes: {
       [ORG_ID_ATTRIBUTE]: [params.organizationId],
       [ORG_ROLE_ATTRIBUTE]: [params.roles.join(",")],
@@ -306,6 +322,10 @@ async function createUser(
     username: params.email,
     email: params.email,
     firstName,
+    lastName,
+    emailVerified: true,
+    enabled: true,
+    requiredActions: [],
     attributes: body.attributes,
   };
 }
@@ -349,6 +369,56 @@ async function assignGlobalRoles(
   });
 }
 
+function flattenGroup(group: GroupRepresentation): GroupRepresentation[] {
+  const flattened: GroupRepresentation[] = [group];
+  for (const child of group.subGroups ?? []) {
+    flattened.push(...flattenGroup(child));
+  }
+  return flattened;
+}
+
+async function fetchAllGroups(ctx: AdminContext): Promise<GroupRepresentation[]> {
+  const groups: GroupRepresentation[] = [];
+  const pageSize = 50;
+  let first = 0;
+  while (true) {
+    const page = await fetchJson<GroupRepresentation[]>(
+      ctx,
+      `/groups?first=${first}&max=${pageSize}`,
+    );
+    if (!Array.isArray(page) || page.length === 0) {
+      break;
+    }
+    for (const group of page) {
+      groups.push(...flattenGroup(group));
+    }
+    if (page.length < pageSize) {
+      break;
+    }
+    first += pageSize;
+  }
+  return groups;
+}
+
+export async function inspectKeycloakOrganizations(): Promise<OrganizationInspection> {
+  const config = getKeycloakConfig();
+  const token = await getAdminToken(config);
+  const ctx: AdminContext = { config, token };
+  await ensureRealm(ctx);
+  await ensureClient(ctx);
+  const groups = await fetchAllGroups(ctx);
+  const organizationGroups = groups.filter((group) =>
+    Boolean(group.attributes?.[ORG_SLUG_ATTRIBUTE]?.length),
+  );
+  const masterOrganizationCount = organizationGroups.filter((group) =>
+    (group.attributes?.[ORG_MASTER_ATTRIBUTE] || []).includes("true"),
+  ).length;
+  return {
+    organizationCount: organizationGroups.length,
+    masterOrganizationCount,
+  };
+}
+
 export async function provisionOrganization(
   params: { name: string; isMaster: boolean },
   owner: { email: string; name: string; password: string; globalRoles: string[] },
@@ -377,6 +447,8 @@ export async function provisionOrganization(
     ownerId: user.id,
   };
 }
+
+export type { OrganizationInspection };
 
 async function getAdminToken(config: KeycloakConfig): Promise<string> {
   const tokenUrl = `${config.baseUrl}/realms/master/protocol/openid-connect/token`;

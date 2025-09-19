@@ -8,6 +8,12 @@ export function installMockKeycloak(): () => void {
   let groupCounter = 1;
   let userCounter = 1;
   const createdRoles = new Set<string>();
+  const groups: {
+    id: string;
+    name: string;
+    path: string;
+    attributes?: Record<string, string[]>;
+  }[] = [];
 
   setKeycloakFetchOverride(async (input, init = {}) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -18,6 +24,17 @@ export function installMockKeycloak(): () => void {
         status: init.status ?? 200,
         headers: { "Content-Type": "application/json", ...(init.headers || {}) },
       });
+
+    const parseRequestBody = <T>() => {
+      if (typeof init.body !== "string") {
+        return null as T | null;
+      }
+      try {
+        return JSON.parse(init.body) as T;
+      } catch {
+        return null as T | null;
+      }
+    };
 
     if (
       url.endsWith("/realms/master/protocol/openid-connect/token") &&
@@ -37,6 +54,22 @@ export function installMockKeycloak(): () => void {
       return json([]);
     }
 
+    if (url.startsWith(`${realmPath}/groups`) && method === "GET") {
+      const parsed = new URL(url);
+      if (parsed.pathname === `${realmPath}/groups/count`) {
+        return json({ count: groups.length });
+      }
+      const first = Number(parsed.searchParams.get("first") ?? "0");
+      const max = Number(parsed.searchParams.get("max") ?? "20");
+      const start = Number.isFinite(first) ? Math.max(0, first) : 0;
+      const size = Number.isFinite(max) ? Math.max(0, max) : 20;
+      const slice = groups.slice(start, start + size).map((group) => ({
+        ...group,
+        subGroups: [],
+      }));
+      return json(slice);
+    }
+
     if (url === `${realmPath}/clients` && method === "POST") {
       const id = `client-${clientCounter++}`;
       return new Response(null, {
@@ -47,6 +80,16 @@ export function installMockKeycloak(): () => void {
 
     if (url === `${realmPath}/groups` && method === "POST") {
       const id = `group-${groupCounter++}`;
+      const body = parseRequestBody<{
+        name?: string;
+        attributes?: Record<string, string[]>;
+      }>();
+      groups.push({
+        id,
+        name: body?.name ?? id,
+        path: `${realmPath}/groups/${id}`,
+        attributes: body?.attributes,
+      });
       return new Response(null, {
         status: 201,
         headers: { location: `${realmPath}/groups/${id}` },
