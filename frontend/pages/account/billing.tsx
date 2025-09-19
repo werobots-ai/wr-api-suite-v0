@@ -432,6 +432,8 @@ export default function BillingPage() {
   const canManageKeys = Boolean(permissions?.manageKeys);
   const canManageBilling = Boolean(permissions?.manageBilling);
   const canManageUsers = Boolean(permissions?.manageUsers);
+  const canAccessAccount =
+    canManageBilling || canManageKeys || canManageUsers;
   const canViewMembers = canManageUsers || canManageBilling;
   const canViewInternalCosts = Boolean(permissions?.viewInternalCosts);
   const resolveProductName = (productId: string) => {
@@ -483,11 +485,27 @@ export default function BillingPage() {
   };
 
   useEffect(() => {
+    if (!canAccessAccount) {
+      setPricing(null);
+      return;
+    }
+    let cancelled = false;
     fetch(`${API_URL}/api/pricing`)
       .then((res) => res.json())
-      .then(setPricing)
-      .catch(() => setPricing(null));
-  }, []);
+      .then((data) => {
+        if (!cancelled) {
+          setPricing(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPricing(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessAccount]);
 
   const loadMembers = useCallback(async () => {
     if (!canViewMembers) return;
@@ -811,6 +829,20 @@ export default function BillingPage() {
         <div className="card">
           <h1>Account &amp; Billing</h1>
           <p>Please sign in to manage billing and API access.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && !canAccessAccount) {
+    return (
+      <div className="container">
+        <div className="card">
+          <h1>Account &amp; Billing</h1>
+          <p>
+            You do not have permission to manage billing or account settings for
+            this organization.
+          </p>
         </div>
       </div>
     );
