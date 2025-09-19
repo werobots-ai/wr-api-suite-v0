@@ -173,7 +173,7 @@ export class DynamoHttpError extends Error {
 const DEFAULT_REGION = process.env.AWS_REGION || "us-east-1";
 const DEFAULT_ENDPOINT =
   process.env.DYNAMODB_ENDPOINT ||
-  `https://dynamodb.${DEFAULT_REGION}.amazonaws.com`;
+  "http://localhost:8000";
 
 function useInMemory(): boolean {
   return process.env.DYNAMODB_IN_MEMORY === "1";
@@ -397,6 +397,7 @@ async function sendDynamoRequest(target: string, body: Record<string, any>) {
   const headers: Record<string, string> = {
     "content-type": "application/x-amz-json-1.0",
     host: endpoint.host,
+    "x-amz-content-sha256": payloadHash,
     "x-amz-date": amzDate,
     "x-amz-target": target,
   };
