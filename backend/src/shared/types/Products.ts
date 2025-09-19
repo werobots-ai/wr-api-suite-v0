@@ -11,6 +11,8 @@ export type ProductId =
 
 export type DocumentAnalysisPermission =
   | "createQuestionSet"
+  | "editQuestionSet"
+  | "manageQuestionSetActivation"
   | "evaluateDocument";
 
 export interface DocumentAnalysisProductConfig {
@@ -53,6 +55,10 @@ export function createDefaultDocumentAnalysisConfig(
     productId: DOCUMENT_ANALYSIS_PRODUCT_ID,
     permissions: {
       createQuestionSet: Boolean(overrides.createQuestionSet),
+      editQuestionSet: Boolean(overrides.editQuestionSet),
+      manageQuestionSetActivation: Boolean(
+        overrides.manageQuestionSetActivation,
+      ),
       evaluateDocument: Boolean(overrides.evaluateDocument),
     },
   };

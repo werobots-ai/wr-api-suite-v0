@@ -96,6 +96,25 @@ function ProductAccessConfigurator({
             <label>
               <input
                 type="checkbox"
+                checked={documentProductConfig.permissions.editQuestionSet}
+                onChange={(e) =>
+                  onUpdate(DOCUMENT_ANALYSIS_PRODUCT_ID, (config) => {
+                    if (!isDocumentAnalysisConfig(config)) return config;
+                    return {
+                      ...config,
+                      permissions: {
+                        ...config.permissions,
+                        editQuestionSet: e.target.checked,
+                      },
+                    };
+                  })
+                }
+              />
+              Allow editing existing question sets
+            </label>
+            <label>
+              <input
+                type="checkbox"
                 checked={documentProductConfig.permissions.evaluateDocument}
                 onChange={(e) =>
                   onUpdate(DOCUMENT_ANALYSIS_PRODUCT_ID, (config) => {
@@ -111,6 +130,27 @@ function ProductAccessConfigurator({
                 }
               />
               Allow document evaluation
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={
+                  documentProductConfig.permissions.manageQuestionSetActivation
+                }
+                onChange={(e) =>
+                  onUpdate(DOCUMENT_ANALYSIS_PRODUCT_ID, (config) => {
+                    if (!isDocumentAnalysisConfig(config)) return config;
+                    return {
+                      ...config,
+                      permissions: {
+                        ...config.permissions,
+                        manageQuestionSetActivation: e.target.checked,
+                      },
+                    };
+                  })
+                }
+              />
+              Allow activation management
             </label>
           </fieldset>
         )}
@@ -229,7 +269,12 @@ export default function BillingPage() {
       : [
           {
             productId: DOCUMENT_ANALYSIS_PRODUCT_ID,
-            permissions: { createQuestionSet: true, evaluateDocument: true },
+            permissions: {
+              createQuestionSet: true,
+              editQuestionSet: true,
+              manageQuestionSetActivation: true,
+              evaluateDocument: true,
+            },
           },
           {
             productId: CV_PARSER_PRODUCT_ID,
@@ -248,6 +293,8 @@ export default function BillingPage() {
           permissions: {
             ...config.permissions,
             createQuestionSet: true,
+            editQuestionSet: true,
+            manageQuestionSetActivation: true,
             evaluateDocument: true,
           },
         };
@@ -406,6 +453,12 @@ export default function BillingPage() {
       const grants = [] as string[];
       if (product.permissions.createQuestionSet) {
         grants.push("create question sets");
+      }
+      if (product.permissions.editQuestionSet) {
+        grants.push("edit question sets");
+      }
+      if (product.permissions.manageQuestionSetActivation) {
+        grants.push("manage activation");
       }
       if (product.permissions.evaluateDocument) {
         grants.push("evaluate documents");

@@ -11,6 +11,8 @@ export type ProductId =
 
 export type DocumentAnalysisPermission =
   | "createQuestionSet"
+  | "editQuestionSet"
+  | "manageQuestionSetActivation"
   | "evaluateDocument";
 
 export type DocumentAnalysisProductConfig = {

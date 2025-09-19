@@ -14,7 +14,18 @@ export async function processSnippets(
   rows: RecordRow[] | null,
   snippets: { id: string; name: string; content: string }[] | null,
   // either fullSnippet or rows must be provided
+  questionSet: QuestionSet,
   {
+    sendLog,
+    sendEvent,
+    sendError,
+    }: {
+    sendLog: (msg: string, snippetId?: string) => void;
+    sendEvent: (event: string, data: any) => void;
+    sendError: (error: any) => void;
+  }
+): Promise<QAResult[]> {
+  const {
     questions,
     originalUserInput,
     executionPlan,
@@ -22,17 +33,8 @@ export async function processSnippets(
     snippetType,
     title,
     id: questionSetId,
-  }: QuestionSet,
-  {
-    sendLog,
-    sendEvent,
-    sendError,
-  }: {
-    sendLog: (msg: string, snippetId?: string) => void;
-    sendEvent: (event: string, data: any) => void;
-    sendError: (error: any) => void;
-  }
-): Promise<QAResult[]> {
+  } = questionSet;
+
   let resultPromises: Promise<QAResult>[] = [];
   console.log(
     "Processing snippets with rows:",
@@ -111,15 +113,9 @@ export async function processSnippets(
           .join("\n");
         const { answers, metrics } = await orchestratorAgent(
           {
-            originalUserInput,
+            ...questionSet,
             snippetId,
             fullSnippet,
-            questions,
-            executionPlan,
-            executionPlanReasoning,
-            snippetType,
-            title,
-            id: questionSetId,
             qaResults: [],
           },
           { sendLog: sendConvLog, sendEvent, sendError },
@@ -178,15 +174,9 @@ export async function processSnippets(
 
     const { answers, metrics } = await orchestratorAgent(
       {
-        originalUserInput,
+        ...questionSet,
         snippetId,
         fullSnippet: content,
-        questions,
-        executionPlan,
-        executionPlanReasoning,
-        snippetType,
-        title,
-        id: questionSetId,
         qaResults: [],
       },
       { sendLog: sendSnippetLog, sendEvent, sendError },
