@@ -43,6 +43,9 @@ interface ClassificationQuestion extends BaseQuestion {
     label: string; // e.g., "Yes", "No", "Partially", "N/A"
     criteria: string; // describe here the criteria for this choice in great detail, over multiple sentences to allow definite classification
   }>;
+
+  // Optional flag to force the downstream answer generator to respond with one of the labels via an enum schema.
+  strict?: boolean;
 }
 
 interface BaseQuestion {
@@ -117,6 +120,7 @@ ${JSON.stringify(failedAttemptResult)}
                     additionalProperties: false,
                   },
                 },
+                strict: { type: "boolean" },
                 choices: {
                   type: "array",
                   items: {
@@ -137,6 +141,7 @@ ${JSON.stringify(failedAttemptResult)}
                 "description",
                 "questionType",
                 "group",
+                "strict",
                 "choices",
                 "dependencies",
               ],
@@ -147,9 +152,16 @@ ${JSON.stringify(failedAttemptResult)}
       }
     );
 
-    const question = JSON.parse(
+    const rawQuestion = JSON.parse(
       response.choices[0].message.content || "{}"
-    ) as ClassificationQuestion;
+    ) as ClassificationQuestion & { strict?: unknown };
+
+    const question: ClassificationQuestion = {
+      ...rawQuestion,
+      ...(typeof rawQuestion.strict === "boolean"
+        ? { strict: rawQuestion.strict }
+        : {}),
+    };
     return { result: { question }, totalCost };
   } catch (error) {
     sendError(`Error in classification finalizer: ${error}`);

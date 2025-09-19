@@ -38,6 +38,8 @@ export interface ClassificationQuestion extends BaseQuestion {
     label: string; // e.g., "Yes", "No", "Partially", "N/A"
     criteria: string; // definitive and exhaustive criteria describing when the label applies. Needs to describe the criteria in great detail
   }>;
+
+  strict?: boolean; // When true, force the short answer schema to use an enum of the labels
 }
 
 // B) Scale questions
