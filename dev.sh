@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.dev.yml"
+DATA_ROOT="$ROOT_DIR/data"
+KEYCLOAK_DATA_DIR="$DATA_ROOT/keycloak"
+DYNAMO_DATA_DIR="$DATA_ROOT/dynamodb"
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   echo "Missing docker-compose file at $COMPOSE_FILE" >&2
@@ -61,6 +64,8 @@ handle_signal() {
 
 trap cleanup EXIT
 trap handle_signal INT TERM
+
+mkdir -p "$KEYCLOAK_DATA_DIR" "$DYNAMO_DATA_DIR"
 
 echo "Starting local infrastructure (DynamoDB Local, Keycloak)..."
 "${COMPOSE_CMD[@]}" up -d

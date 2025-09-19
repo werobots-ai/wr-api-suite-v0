@@ -11,7 +11,7 @@ services:
       - JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     volumes:
-      - dynamodb_data:/home/dynamodblocal/data
+      - ./data/dynamodb:/home/dynamodblocal/data
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
@@ -26,8 +26,4 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - keycloak_data:/opt/keycloak/data
-
-volumes:
-  dynamodb_data:
-  keycloak_data:
+      - ./data/keycloak:/opt/keycloak/data
