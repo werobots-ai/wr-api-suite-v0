@@ -1,234 +1,157 @@
-import fs from "fs/promises";
-import path from "path";
 import {
   QAResult,
   QuestionSet,
   QuestionSetActor,
   QuestionSetStatus,
 } from "../types/Questions";
-
-const PROJECT_ROOT = path.resolve(__dirname, "../../../..");
-const QUESTIONS_ROOT = path.join(PROJECT_ROOT, "data/questions");
-const QA_RESULTS_ROOT = path.join(PROJECT_ROOT, "data/qaResults");
-const FILE_PREFIX = "questions-";
+import {
+  getItem,
+  putItem,
+  query,
+  updateItem,
+  QUESTION_SETS_TABLE_NAME,
+  QUESTION_SETS_SNIPPET_GSI_NAME,
+  DynamoItem,
+} from "./dynamo";
 
 type StoredQuestionSet = Omit<QuestionSet, "qaResults">;
 
-function isQuestionSetStatus(value: unknown): value is QuestionSetStatus {
-  return value === "draft" || value === "active" || value === "inactive";
+const ENTITY_TYPE_QUESTION_SET = "QUESTION_SET";
+const ENTITY_TYPE_QA_RESULT = "QA_RESULT";
+const ORG_KEY_PREFIX = "ORG#";
+const QUESTION_SET_PREFIX = "QSET#";
+const QA_PREFIX = "QA#";
+const SNIPPET_PREFIX = "SNIPPET#";
+
+interface QuestionSetItem extends DynamoItem {
+  pk: string;
+  sk: string;
+  entityType: typeof ENTITY_TYPE_QUESTION_SET;
+  orgId: string;
+  questionSetId: string;
+  title: string;
+  status: QuestionSetStatus;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt: string | null;
+  questionCount: number;
+  payload: StoredQuestionSet;
+  deletedAt?: string;
 }
 
-function toActor(value: unknown): QuestionSetActor | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const candidate = value as {
-    type?: unknown;
-    id?: unknown;
-    label?: unknown;
-  };
-  if (candidate.type !== "user" && candidate.type !== "apiKey") {
-    return null;
-  }
-  if (typeof candidate.id !== "string" || !candidate.id) {
-    return null;
-  }
-  const actor: QuestionSetActor = {
-    type: candidate.type,
-    id: candidate.id,
-  };
-  if (
-    "label" in candidate &&
-    (typeof candidate.label === "string" || candidate.label === null)
-  ) {
-    actor.label = candidate.label;
-  }
-  return actor;
+interface QaResultItem extends DynamoItem {
+  pk: string;
+  sk: string;
+  entityType: typeof ENTITY_TYPE_QA_RESULT;
+  orgId: string;
+  questionSetId: string;
+  snippetId: string;
+  createdAt: string;
+  updatedAt: string;
+  payload: QAResult;
+  snippetIndexPk: string;
+  deletedAt?: string;
 }
 
-function ensureIsoString(value: unknown, fallback: string): string {
-  if (typeof value === "string" && value) {
-    const timestamp = Date.parse(value);
-    if (!Number.isNaN(timestamp)) {
-      return new Date(timestamp).toISOString();
+function orgPartitionKey(orgId: string): string {
+  return `${ORG_KEY_PREFIX}${orgId}`;
+}
+
+function questionSetSortKey(questionSetId: string): string {
+  return `${QUESTION_SET_PREFIX}${questionSetId}`;
+}
+
+function qaResultSortKey(questionSetId: string, snippetId: string): string {
+  return `${QA_PREFIX}${questionSetId}#${snippetId}`;
+}
+
+function snippetIndexPartitionKey(orgId: string, snippetId: string): string {
+  return `${SNIPPET_PREFIX}${orgId}#${snippetId}`;
+}
+
+function cloneRecord<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+async function queryAllItems(input: {
+  TableName: string;
+  KeyConditionExpression: string;
+  ExpressionAttributeValues: Record<string, any>;
+  ExpressionAttributeNames?: Record<string, string>;
+  IndexName?: string;
+  FilterExpression?: string;
+}): Promise<DynamoItem[]> {
+  const items: DynamoItem[] = [];
+  let lastKey: DynamoItem | undefined;
+  do {
+    const result = await query({
+      TableName: input.TableName,
+      KeyConditionExpression: input.KeyConditionExpression,
+      ExpressionAttributeValues: input.ExpressionAttributeValues,
+      ExpressionAttributeNames: input.ExpressionAttributeNames,
+      IndexName: input.IndexName,
+      FilterExpression: input.FilterExpression,
+      ExclusiveStartKey: lastKey,
+    });
+    if (result.Items) {
+      items.push(...result.Items);
     }
-  }
-  return fallback;
-}
-
-function parseQuestionFilename(filename: string):
-  | {
-      safeId: string;
-      id: string;
-      title: string;
-      questionCount: number;
-    }
-  | null {
-  if (filename.startsWith(".DELETED_")) return null;
-  if (!filename.startsWith(FILE_PREFIX) || !filename.endsWith(".json")) {
-    return null;
-  }
-  const basename = filename.slice(FILE_PREFIX.length, -5);
-  const parts = basename.split("-");
-  if (parts.length !== 3) return null;
-  const [safeTitle, safeId, countStr] = parts;
-  const id = toUnsafeSegment(safeId);
-  const title = toUnsafeSegment(safeTitle);
-  const questionCount = Number(countStr);
-  if (!Number.isFinite(questionCount)) {
-    return null;
-  }
-  return { safeId, id, title, questionCount };
-}
-
-async function findQuestionSetFile(orgId: string, id: string) {
-  const dir = getQuestionsDirForOrg(orgId);
-  let files: string[];
-  try {
-    files = await fs.readdir(dir);
-  } catch {
-    throw new Error("No question sets found");
-  }
-  const safeId = toSafeSegment(id);
-  for (const file of files) {
-    const parsed = parseQuestionFilename(file);
-    if (parsed && parsed.safeId === safeId) {
-      return { dir, filename: file, parsed };
-    }
-  }
-  throw new Error(`Question set with id ${id} not found`);
-}
-
-function normalizeQuestionSetRecord(
-  raw: Partial<StoredQuestionSet>,
-  defaults: {
-    id: string;
-    title: string;
-    createdAt: string;
-    updatedAt: string;
-  },
-): StoredQuestionSet {
-  const createdAt = ensureIsoString(raw.createdAt, defaults.createdAt);
-  const updatedAt = ensureIsoString(raw.updatedAt, defaults.updatedAt);
-  const status = isQuestionSetStatus(raw.status) ? raw.status : "active";
-  const finalizedAtRaw =
-    status === "draft"
-      ? null
-      : raw.finalizedAt === null
-      ? null
-      : ensureIsoString(raw.finalizedAt, updatedAt);
-  return {
-    id: raw.id || defaults.id,
-    title: raw.title || defaults.title,
-    executionPlan: raw.executionPlan || "",
-    executionPlanReasoning: raw.executionPlanReasoning || "",
-    snippetType: raw.snippetType || "",
-    questions: Array.isArray(raw.questions) ? raw.questions : [],
-    originalUserInput: raw.originalUserInput || "",
-    status,
-    createdAt,
-    updatedAt,
-    finalizedAt: status === "draft" ? null : finalizedAtRaw,
-    createdBy: toActor(raw.createdBy),
-    lastModifiedBy: toActor(raw.lastModifiedBy) || toActor(raw.createdBy),
-  };
-}
-
-async function removeExistingQuestionSetFiles(orgId: string, id: string) {
-  const dir = getQuestionsDirForOrg(orgId);
-  let files: string[];
-  try {
-    files = await fs.readdir(dir);
-  } catch {
-    return;
-  }
-  const safeId = toSafeSegment(id);
-  await Promise.all(
-    files
-      .filter((file) => !file.startsWith(".DELETED_"))
-      .map((file) => ({ file, parsed: parseQuestionFilename(file) }))
-      .filter((entry) => entry.parsed && entry.parsed.safeId === safeId)
-      .map((entry) => fs.unlink(path.join(dir, entry.file))),
-  );
-}
-
-async function readQuestionSetFile(
-  orgId: string,
-  dir: string,
-  filename: string,
-  parsed: NonNullable<ReturnType<typeof parseQuestionFilename>>,
-): Promise<StoredQuestionSet> {
-  const filePath = path.join(dir, filename);
-  const raw = await fs.readFile(filePath, "utf-8");
-  const data = JSON.parse(raw) as Partial<StoredQuestionSet> & {
-    orgId?: string;
-  };
-  if (data.orgId && data.orgId !== orgId) {
-    throw new Error("Question set does not belong to this organization");
-  }
-  const stat = await fs.stat(filePath);
-  const defaults = {
-    id: parsed.id,
-    title: parsed.title,
-    createdAt: stat.birthtime
-      ? new Date(stat.birthtime).toISOString()
-      : new Date().toISOString(),
-    updatedAt: stat.mtime
-      ? new Date(stat.mtime).toISOString()
-      : new Date().toISOString(),
-  };
-  return normalizeQuestionSetRecord({ ...data, id: data.id || parsed.id }, defaults);
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items;
 }
 
 async function loadQuestionSetRecord(
   orgId: string,
   id: string,
 ): Promise<StoredQuestionSet> {
-  const context = await findQuestionSetFile(orgId, id);
-  return readQuestionSetFile(orgId, context.dir, context.filename, context.parsed);
+  const result = await getItem({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    Key: {
+      pk: orgPartitionKey(orgId),
+      sk: questionSetSortKey(id),
+    },
+    ConsistentRead: true,
+  });
+  if (!result.Item) {
+    throw new Error("Question set with id " + id + " not found");
+  }
+  const item = result.Item as QuestionSetItem;
+  if (item.deletedAt) {
+    throw new Error("Question set with id " + id + " not found");
+  }
+  return cloneRecord(item.payload);
 }
 
 async function writeQuestionSetRecord(
   orgId: string,
   record: StoredQuestionSet,
 ): Promise<void> {
-  const dir = getQuestionsDirForOrg(orgId);
-  await fs.mkdir(dir, { recursive: true });
-  await removeExistingQuestionSetFiles(orgId, record.id);
-  const rawTitle = record.title || "untitled";
-  const questionCount = record.questions.length;
-  const safeTitle = toSafeSegment(rawTitle);
-  const safeId = toSafeSegment(record.id);
-  const filename = `${FILE_PREFIX}${safeTitle}-${safeId}-${questionCount}.json`;
-  const payload = {
-    ...record,
+  const item: QuestionSetItem = {
+    pk: orgPartitionKey(orgId),
+    sk: questionSetSortKey(record.id),
+    entityType: ENTITY_TYPE_QUESTION_SET,
     orgId,
+    questionSetId: record.id,
+    title: record.title,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    finalizedAt: record.finalizedAt,
+    questionCount: record.questions.length,
+    payload: cloneRecord(record),
   };
-  await fs.writeFile(
-    path.join(dir, filename),
-    JSON.stringify(payload, null, 2),
-    "utf-8",
-  );
+  await putItem({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    Item: item,
+  });
 }
 
-function toSafeSegment(value: string): string {
-  return encodeURIComponent(value).replace(/-/g, "%2D");
-}
-
-function toUnsafeSegment(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function getQuestionsDirForOrg(orgId: string): string {
-  return path.join(QUESTIONS_ROOT, toSafeSegment(orgId));
-}
-
-function getQaDirForOrg(orgId: string): string {
-  return path.join(QA_RESULTS_ROOT, toSafeSegment(orgId));
+function toQuestionSet(item: QuestionSetItem, qaResults: QAResult[]): QuestionSet {
+  return {
+    ...cloneRecord(item.payload),
+    qaResults,
+  };
 }
 
 export async function loadQuestionSet(
@@ -239,11 +162,7 @@ export async function loadQuestionSet(
     throw new Error("No question set ID provided");
   }
   const record = await loadQuestionSetRecord(orgId, id);
-
-  const qaResults = await listQaResults(orgId, {
-    questionSetId: record.id,
-  });
-
+  const qaResults = await listQaResults(orgId, { questionSetId: record.id });
   return {
     ...record,
     qaResults,
@@ -274,56 +193,44 @@ export async function listQuestionSets(
   }[]
 > {
   const qaResults = await listQaResults(orgId);
-  const qaResultsByQuestionSetId = {} as Record<string, QAResult[]>;
-  for (const qaResult of qaResults) {
-    if (!qaResultsByQuestionSetId[qaResult.questionSetId]) {
-      qaResultsByQuestionSetId[qaResult.questionSetId] = [];
-    }
-    qaResultsByQuestionSetId[qaResult.questionSetId].push(qaResult);
-  }
+  const qaResultsByQuestionSetId = qaResults.reduce<Record<string, number>>(
+    (acc, result) => {
+      acc[result.questionSetId] = (acc[result.questionSetId] || 0) + 1;
+      return acc;
+    },
+    {},
+  );
 
-  const dir = getQuestionsDirForOrg(orgId);
-  let files: string[];
-  try {
-    files = await fs.readdir(dir);
-  } catch {
-    return [];
-  }
-  const result: {
-    id: string;
-    title: string;
-    date: Date;
-    questionCount: number;
-    snippetCount: number;
-    status: QuestionSetStatus;
-    createdAt: string;
-    updatedAt: string;
-    finalizedAt: string | null;
-  }[] = [];
+  const items = await queryAllItems({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
+    ExpressionAttributeValues: {
+      ":pk": orgPartitionKey(orgId),
+      ":prefix": QUESTION_SET_PREFIX,
+    },
+    FilterExpression: "attribute_not_exists(deletedAt)",
+  });
 
-  for (const file of files) {
-    const parsed = parseQuestionFilename(file);
-    if (!parsed) continue;
-    const record = await readQuestionSetFile(orgId, dir, file, parsed);
-    result.push({
-      id: record.id,
-      title: record.title,
-      date: new Date(record.updatedAt),
-      questionCount: record.questions.length,
-      snippetCount: qaResultsByQuestionSetId[record.id]?.length || 0,
-      status: record.status,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
-      finalizedAt: record.finalizedAt,
-    });
-  }
+  const mapped = (items as QuestionSetItem[]).map((item) => ({
+    id: item.questionSetId,
+    title: item.title,
+    date: new Date(item.updatedAt),
+    questionCount: item.questionCount,
+    snippetCount: qaResultsByQuestionSetId[item.questionSetId] || 0,
+    status: item.status,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    finalizedAt: item.finalizedAt,
+  }));
+
   if (titleFilter) {
     const filterLower = titleFilter.toLowerCase();
-    return result.filter((item) =>
-      item.title.toLowerCase().includes(filterLower)
+    return mapped.filter((item) =>
+      item.title.toLowerCase().includes(filterLower),
     );
   }
-  return result;
+
+  return mapped;
 }
 
 export async function updateQuestionSet(
@@ -334,7 +241,7 @@ export async function updateQuestionSet(
   ) => StoredQuestionSet | Promise<StoredQuestionSet>,
 ): Promise<QuestionSet> {
   const current = await loadQuestionSetRecord(orgId, id);
-  const draft = JSON.parse(JSON.stringify(current)) as StoredQuestionSet;
+  const draft = cloneRecord(current);
   const next = await mutate(draft);
   const payload: StoredQuestionSet = {
     ...current,
@@ -392,114 +299,117 @@ export const loadQaResult = async (
   snippetId: string,
   questionSetId: string,
 ): Promise<QAResult | null> => {
-  const dir = getQaDirForOrg(orgId);
-  const filePath = path.join(
-    dir,
-    `${toSafeSegment(questionSetId)}-${toSafeSegment(snippetId)}.json`,
-  );
-  try {
-    const data = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Error loading QA result:", error);
-    return null;
-  }
+  const result = await getItem({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    Key: {
+      pk: orgPartitionKey(orgId),
+      sk: qaResultSortKey(questionSetId, snippetId),
+    },
+    ConsistentRead: true,
+  });
+  if (!result.Item) return null;
+  const item = result.Item as QaResultItem;
+  if (item.deletedAt) return null;
+  return cloneRecord(item.payload);
 };
+
 export const saveQaResult = async (
   orgId: string,
   qaResult: QAResult,
 ): Promise<void> => {
-  const dir = getQaDirForOrg(orgId);
-  const filePath = path.join(
-    dir,
-    `${toSafeSegment(qaResult.questionSetId)}-${toSafeSegment(
-      qaResult.snippetId,
-    )}.json`,
-  );
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(qaResult, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error saving QA result:", error);
-  }
+  const timestamp = new Date().toISOString();
+  const item: QaResultItem = {
+    pk: orgPartitionKey(orgId),
+    sk: qaResultSortKey(qaResult.questionSetId, qaResult.snippetId),
+    entityType: ENTITY_TYPE_QA_RESULT,
+    orgId,
+    questionSetId: qaResult.questionSetId,
+    snippetId: qaResult.snippetId,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    payload: cloneRecord(qaResult),
+    snippetIndexPk: snippetIndexPartitionKey(orgId, qaResult.snippetId),
+  };
+  await putItem({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    Item: item,
+  });
 };
+
 export const listQaResults = async (
   orgId: string,
   params: {
     questionSetId?: string;
     snippetId?: string;
-  } = {}
+  } = {},
 ): Promise<QAResult[]> => {
-  console.log("Listing QA results with params:", params);
-
-  const dirPath = getQaDirForOrg(orgId);
   const { questionSetId, snippetId } = params;
-  try {
-    const files = await fs.readdir(dirPath);
-    const results: QAResult[] = [];
-    for (const file of files) {
-      if (!file.endsWith(".json") || file.startsWith(".DELETED_")) continue;
-      const [safeQuestionSetId, safeSnippetId] = file.slice(0, -5).split("-");
-      const resolvedQuestionSetId = toUnsafeSegment(safeQuestionSetId);
-      const resolvedSnippetId = toUnsafeSegment(safeSnippetId);
-      if (
-        (questionSetId && questionSetId !== resolvedQuestionSetId) ||
-        (snippetId && snippetId !== resolvedSnippetId)
-      )
-        continue;
-      const data = await fs.readFile(path.join(dirPath, file), "utf-8");
-      results.push(JSON.parse(data));
-    }
-    return results;
-  } catch (error) {
-    console.error("Error listing QA results:", error);
-    return [];
+
+  if (snippetId) {
+    const items = await queryAllItems({
+      TableName: QUESTION_SETS_TABLE_NAME,
+      KeyConditionExpression: "snippetIndexPk = :pk",
+      ExpressionAttributeValues: {
+        ":pk": snippetIndexPartitionKey(orgId, snippetId),
+        ...(questionSetId ? { ":qs": questionSetId } : {}),
+      },
+      FilterExpression: questionSetId
+        ? "questionSetId = :qs AND attribute_not_exists(deletedAt)"
+        : "attribute_not_exists(deletedAt)",
+      IndexName: QUESTION_SETS_SNIPPET_GSI_NAME,
+    });
+    return (items as QaResultItem[])
+      .filter((item) => !item.deletedAt)
+      .map((item) => cloneRecord(item.payload));
   }
+
+  const prefix = questionSetId ? `${QA_PREFIX}${questionSetId}#` : QA_PREFIX;
+  const items = await queryAllItems({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    KeyConditionExpression: "pk = :pk AND begins_with(sk, :prefix)",
+    ExpressionAttributeValues: {
+      ":pk": orgPartitionKey(orgId),
+      ":prefix": prefix,
+    },
+    FilterExpression: "attribute_not_exists(deletedAt)",
+  });
+
+  return (items as QaResultItem[])
+    .filter((item) => !item.deletedAt)
+    .map((item) => cloneRecord(item.payload));
 };
 
 export async function softDeleteQuestionSet(
   orgId: string,
   id: string,
 ): Promise<void> {
-  if (!id) {
-    throw new Error("No question set ID provided");
-  }
-  const safeId = toSafeSegment(id);
-
-  const dir = getQuestionsDirForOrg(orgId);
-  let files: string[];
-  try {
-    files = await fs.readdir(dir);
-  } catch {
-    throw new Error(`Question set with id ${id} not found`);
-  }
-  const filename = files.find((file) => {
-    if (!file.startsWith(FILE_PREFIX) || !file.endsWith(".json")) return false;
-    const basename = file.slice(FILE_PREFIX.length, -5);
-    const parts = basename.split("-");
-    return parts.length === 3 && parts[1] === safeId;
+  const timestamp = new Date().toISOString();
+  await updateItem({
+    TableName: QUESTION_SETS_TABLE_NAME,
+    Key: {
+      pk: orgPartitionKey(orgId),
+      sk: questionSetSortKey(id),
+    },
+    UpdateExpression: "SET deletedAt = :timestamp",
+    ExpressionAttributeValues: {
+      ":timestamp": timestamp,
+    },
   });
-  if (!filename) {
-    throw new Error(`Question set with id ${id} not found`);
-  }
-  const oldPath = path.join(dir, filename);
-  const newFilename = `.DELETED_${filename}`;
-  const newPath = path.join(dir, newFilename);
-  await fs.rename(oldPath, newPath);
 
-  const qaDir = getQaDirForOrg(orgId);
-  let qaFiles: string[];
-  try {
-    qaFiles = await fs.readdir(qaDir);
-  } catch {
-    return;
-  }
-  const prefix = `${safeId}-`;
-  for (const file of qaFiles) {
-    if (!file.endsWith(".json") || !file.startsWith(prefix)) continue;
-    const oldQaPath = path.join(qaDir, file);
-    const newQaFilename = `.DELETED_${file}`;
-    const newQaPath = path.join(qaDir, newQaFilename);
-    await fs.rename(oldQaPath, newQaPath);
-  }
+  const qaResults = await listQaResults(orgId, { questionSetId: id });
+  await Promise.all(
+    qaResults.map((result) =>
+      updateItem({
+        TableName: QUESTION_SETS_TABLE_NAME,
+        Key: {
+          pk: orgPartitionKey(orgId),
+          sk: qaResultSortKey(id, result.snippetId),
+        },
+        UpdateExpression: "SET deletedAt = :timestamp",
+        ExpressionAttributeValues: {
+          ":timestamp": timestamp,
+        },
+      }),
+    ),
+  );
 }

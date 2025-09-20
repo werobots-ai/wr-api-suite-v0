@@ -1,18 +1,21 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import type { IdentityStoreData } from "../../src/shared/types/Identity";
+import { resetInMemoryTables } from "../../src/shared/utils/dynamo";
 
-const identityPath = (() => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wr-identity-tests-"));
-  const file = path.join(dir, "identity.json");
-  process.env.IDENTITY_FILE_PATH = file;
-  return file;
-})();
+declare global {
+  // eslint-disable-next-line no-var
+  var __wrIdentityInitialized: boolean | undefined;
+}
 
-export function getIdentityTestPath(): string {
-  return identityPath;
+function ensureInMemoryDynamo(): void {
+  if (!global.__wrIdentityInitialized) {
+    process.env.DYNAMODB_IN_MEMORY = "1";
+    global.__wrIdentityInitialized = true;
+  }
+  resetInMemoryTables();
+}
+
+export function prepareIdentityTestEnv(): void {
+  ensureInMemoryDynamo();
 }
 
 export function createLegacyIdentityStore(): IdentityStoreData {
